@@ -39,11 +39,11 @@ impl ConfigStore {
     /// file and the in-memory tree are unchanged.
     pub fn apply(&mut self, op: TreeOp) -> Result<NodeId, ConfigError> {
         let mut next = self.tree.clone();
-        let id = next.apply(op)?;
+        let outcome = next.apply(op)?;
         next.validate()?;
         fsio::write_atomic(&self.paths.servers(), serialize(&next)?.as_bytes())?;
         self.tree = next;
-        Ok(id)
+        Ok(outcome.node)
     }
 }
 

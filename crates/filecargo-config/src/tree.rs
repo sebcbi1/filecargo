@@ -6,8 +6,47 @@ use crate::model::{Auth, Folder, FolderId, NodeId, Protocol, Site, SiteId};
 /// A mutation of the server tree. Applied by `ConfigStore::apply`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeOp {
+    AddFolder {
+        name: String,
+        parent: Option<FolderId>,
+    },
     AddSite(Site),
     UpdateSite(Site),
+    Rename {
+        node: NodeId,
+        name: String,
+    },
+    Move {
+        node: NodeId,
+        parent: Option<FolderId>,
+    },
+    /// Copies a site under a new id and name `"<name> (copy)"`, `"(copy 2)"`, ...
+    Duplicate {
+        site: SiteId,
+    },
+    /// Deleting a folder is recursive.
+    Delete {
+        node: NodeId,
+    },
+}
+
+/// What an applied op did beyond returning the affected node; used for secret bookkeeping.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Outcome {
+    pub node: NodeId,
+    pub removed_sites: Vec<SiteId>,
+    /// For `Duplicate`: the site that was copied (`node` is the copy).
+    pub duplicated_from: Option<SiteId>,
+}
+
+impl Outcome {
+    fn node(node: NodeId) -> Self {
+        Self {
+            node,
+            removed_sites: Vec::new(),
+            duplicated_from: None,
+        }
+    }
 }
 
 /// A child of a folder, as returned by [`ServerTree::children`].
@@ -67,12 +106,22 @@ impl ServerTree {
 
     /// Applies `op` in place. The caller is expected to work on a clone and call
     /// [`validate`](Self::validate) before committing.
-    pub(crate) fn apply(&mut self, op: TreeOp) -> Result<NodeId, ValidationError> {
+    pub(crate) fn apply(&mut self, op: TreeOp) -> Result<Outcome, ValidationError> {
         match op {
+            TreeOp::AddFolder { name, parent } => {
+                let folder = Folder {
+                    id: FolderId::new(),
+                    name,
+                    parent,
+                };
+                let id = folder.id;
+                self.folders.push(folder);
+                Ok(Outcome::node(NodeId::Folder(id)))
+            }
             TreeOp::AddSite(site) => {
                 let id = site.id;
                 self.sites.push(site);
-                Ok(NodeId::Site(id))
+                Ok(Outcome::node(NodeId::Site(id)))
             }
             TreeOp::UpdateSite(site) => {
                 let id = site.id;
@@ -82,9 +131,126 @@ impl ServerTree {
                     .find(|s| s.id == id)
                     .ok_or(ValidationError::UnknownNode)?;
                 *slot = site;
-                Ok(NodeId::Site(id))
+                Ok(Outcome::node(NodeId::Site(id)))
+            }
+            TreeOp::Rename { node, name } => {
+                match node {
+                    NodeId::Site(id) => self.site_mut(id)?.name = name,
+                    NodeId::Folder(id) => self.folder_mut(id)?.name = name,
+                }
+                Ok(Outcome::node(node))
+            }
+            TreeOp::Move { node, parent } => {
+                match node {
+                    NodeId::Site(id) => self.site_mut(id)?.folder = parent,
+                    NodeId::Folder(id) => self.folder_mut(id)?.parent = parent,
+                }
+                Ok(Outcome::node(node))
+            }
+            TreeOp::Duplicate { site } => {
+                let original = self.site(site).ok_or(ValidationError::UnknownNode)?;
+                let mut copy = original.clone();
+                copy.id = SiteId::new();
+                copy.name = self.copy_name(original);
+                let id = copy.id;
+                self.sites.push(copy);
+                Ok(Outcome {
+                    node: NodeId::Site(id),
+                    removed_sites: Vec::new(),
+                    duplicated_from: Some(site),
+                })
+            }
+            TreeOp::Delete { node } => match node {
+                NodeId::Site(id) => {
+                    let before = self.sites.len();
+                    self.sites.retain(|s| s.id != id);
+                    if self.sites.len() == before {
+                        return Err(ValidationError::UnknownNode);
+                    }
+                    Ok(Outcome {
+                        node,
+                        removed_sites: vec![id],
+                        duplicated_from: None,
+                    })
+                }
+                NodeId::Folder(id) => {
+                    if self.folder(id).is_none() {
+                        return Err(ValidationError::UnknownNode);
+                    }
+                    let doomed = self.descendant_folders(id);
+                    let removed_sites = self
+                        .sites
+                        .iter()
+                        .filter(|s| s.folder.is_some_and(|f| doomed.contains(&f)))
+                        .map(|s| s.id)
+                        .collect();
+                    self.folders.retain(|f| !doomed.contains(&f.id));
+                    self.sites
+                        .retain(|s| !s.folder.is_some_and(|f| doomed.contains(&f)));
+                    Ok(Outcome {
+                        node,
+                        removed_sites,
+                        duplicated_from: None,
+                    })
+                }
+            },
+        }
+    }
+
+    fn site_mut(&mut self, id: SiteId) -> Result<&mut Site, ValidationError> {
+        self.sites
+            .iter_mut()
+            .find(|s| s.id == id)
+            .ok_or(ValidationError::UnknownNode)
+    }
+
+    fn folder_mut(&mut self, id: FolderId) -> Result<&mut Folder, ValidationError> {
+        self.folders
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or(ValidationError::UnknownNode)
+    }
+
+    /// `root` and every folder below it.
+    fn descendant_folders(&self, root: FolderId) -> HashSet<FolderId> {
+        let mut found = HashSet::from([root]);
+        loop {
+            let before = found.len();
+            for f in &self.folders {
+                if f.parent.is_some_and(|p| found.contains(&p)) {
+                    found.insert(f.id);
+                }
+            }
+            if found.len() == before {
+                return found;
             }
         }
+    }
+
+    /// First free `"<name> (copy)"`, `"<name> (copy 2)"`, ... among `site`'s siblings.
+    fn copy_name(&self, site: &Site) -> String {
+        let taken = |candidate: &str| {
+            let key = candidate.trim().to_lowercase();
+            self.folders
+                .iter()
+                .filter(|f| f.parent == site.folder)
+                .map(|f| &f.name)
+                .chain(
+                    self.sites
+                        .iter()
+                        .filter(|s| s.folder == site.folder)
+                        .map(|s| &s.name),
+                )
+                .any(|n| n.trim().to_lowercase() == key)
+        };
+        let first = format!("{} (copy)", site.name);
+        if !taken(&first) {
+            return first;
+        }
+        (2..)
+            .map(|n| format!("{} (copy {n})", site.name))
+            .find(|c| !taken(c))
+            .unwrap_or(first)
     }
 
     /// Checks every rule of the spec against the whole tree.

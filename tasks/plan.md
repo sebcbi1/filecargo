@@ -58,7 +58,7 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 
 ### Phase 2: Server tree
 - [x] T3: Add a root site and persist it (M)
-- [ ] T4: Folders + rename / move / duplicate / delete (M)
+- [x] T4: Folders + rename / move / duplicate / delete (M)
 - [ ] T5: Safe multi-instance writes + corrupt-file handling (M)
 
 ### Checkpoint B: Tree is durable
