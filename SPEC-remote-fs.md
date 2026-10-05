@@ -122,6 +122,7 @@ pub struct ConnectContext {
     pub prompter: Arc<dyn Prompter>,
     pub trust: Arc<SessionTrust>,              // in-memory, shared by every connection of the app
     pub timeouts: ConnectionSettings,          // connect timeout, keepalive
+    pub user_known_hosts: Option<PathBuf>,     // OpenSSH known_hosts, read-only; None disables
 }
 
 pub struct Session {

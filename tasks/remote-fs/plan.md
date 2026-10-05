@@ -48,7 +48,7 @@ T3 docker servers + CI integration job ─────────────�
 - [x] T3: Docker test servers (OpenSSH + ProFTPD image, 3 configs, keys/certs), `cargo it` alias, CI `integration` job (M)
 ### Checkpoint A: trait and contract suite reviewed; containers healthy locally and in CI
 ### Phase 2: SFTP
-- [ ] T4: Connect plumbing (`ConnectContext`, `Prompter`, `SessionTrust`, `Session`, `ConnectError`), SFTP transport + host-key verification (M)
+- [x] T4: Connect plumbing (`ConnectContext`, `Prompter`, `SessionTrust`, `Session`, `ConnectError`), SFTP transport + host-key verification (M)
 - [ ] T5: SFTP auth: password / keyboard-interactive with lookup order, remember and retry-once; key file incl. encrypted; agent (M)
 - [ ] T6: SFTP `RemoteFs` over russh-sftp; contract suite green on docker `sftp`; keepalive (M)
 - [ ] T7: `ShellOpener` / `ShellChannel` with a draining pump and resize (S)
@@ -99,3 +99,12 @@ _Appended per task during implementation._
 - Healthchecks use `nc -w1 127.0.0.1 <port>` (busybox `nc` has no `-z`, and `localhost` resolves to ::1).
 - vsftpd config files must be root-owned: bind-mounting host files makes them exit 2; bake configs into the image.
 - `.cargo/config.toml` alias `it`; CI `integration` job added and `actionlint` clean (not yet run on GitHub).
+
+### T4 Connect plumbing + SSH transport + host keys (done)
+- `ConnectContext::new(paths, secrets, prompter)` plus the extra pub field **`user_known_hosts: Option<PathBuf>`** (defaults to `~/.ssh/known_hosts`; tests point it at a temp file). Not in the spec's struct sketch; spec updated alongside.
+- `sftp::connect_ssh(site, ctx) -> SshConnection` does TCP + handshake + host-key policy, **no auth yet** (T5). `Session` / `SessionInfo` / `ShellOpener` arrive with T6/T7, and `connect()` dispatch with T6.
+- russh is built with features `ring`, `rsa`, `flate2` and **no** aws-lc-rs (verified with `cargo tree -i aws-lc-rs`); `rsa` is kept so RSA host/user keys work.
+- `timeout_secs` bounds TCP + handshake but pauses while the host-key prompt is open (flag set by the handler).
+- Hashed `|1|` known_hosts entries **are** matched by russh (HMAC-SHA1); wildcards / `@cert-authority` markers are not, and an unparsable line only costs a prompt. russh's `learn_known_hosts_path` starts a fresh file with a blank line (harmless).
+- Verified: 7 unit tests (policy with a scripted prompter) + 5 integration tests against docker `sftp` (unknown → prompt, trust always persists and the user's file stays byte-identical, once, reject, changed key refused with no prompt, refused port).
+- `tests/support` gained `TestPrompter` (scripted decisions/answers, records prompts).

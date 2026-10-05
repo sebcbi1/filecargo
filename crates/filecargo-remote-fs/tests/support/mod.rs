@@ -22,3 +22,75 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .map(|b| format!("{b:02x}"))
         .collect()
 }
+
+// ---- scripted prompter -------------------------------------------------------------------
+
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use filecargo_remote_fs::{
+    CredentialAnswer, CredentialPrompt, HostKeyPrompt, Prompter, TrustDecision,
+};
+
+type Script = Option<(Vec<String>, bool)>;
+
+/// Answers prompts from a script and records what it was asked.
+#[derive(Default)]
+pub struct TestPrompter {
+    pub host_key_decision: Mutex<Option<TrustDecision>>,
+    /// Popped one per credential prompt; `None` entries cancel the prompt.
+    pub credential_answers: Mutex<VecDeque<Script>>,
+    pub host_key_prompts: Mutex<Vec<HostKeyPrompt>>,
+    pub credential_prompts: Mutex<Vec<CredentialPrompt>>,
+}
+
+impl TestPrompter {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    pub fn trust(self: &Arc<Self>, decision: TrustDecision) -> Arc<Self> {
+        *self.host_key_decision.lock().unwrap() = Some(decision);
+        self.clone()
+    }
+
+    pub fn answer(&self, values: &[&str], remember: bool) {
+        let values = values.iter().map(|v| (*v).to_owned()).collect();
+        self.credential_answers
+            .lock()
+            .unwrap()
+            .push_back(Some((values, remember)));
+    }
+
+    pub fn host_key_prompt_count(&self) -> usize {
+        self.host_key_prompts.lock().unwrap().len()
+    }
+
+    pub fn credential_prompt_count(&self) -> usize {
+        self.credential_prompts.lock().unwrap().len()
+    }
+}
+
+#[async_trait]
+impl Prompter for TestPrompter {
+    async fn credential(&self, request: CredentialPrompt) -> Option<CredentialAnswer> {
+        self.credential_prompts.lock().unwrap().push(request);
+        let (values, remember) = self.credential_answers.lock().unwrap().pop_front()??;
+        Some(CredentialAnswer {
+            values: values
+                .into_iter()
+                .map(secrecy::SecretString::from)
+                .collect(),
+            remember,
+        })
+    }
+
+    async fn host_key(&self, request: HostKeyPrompt) -> TrustDecision {
+        self.host_key_prompts.lock().unwrap().push(request);
+        self.host_key_decision
+            .lock()
+            .unwrap()
+            .unwrap_or(TrustDecision::Reject)
+    }
+}
