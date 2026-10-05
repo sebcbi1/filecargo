@@ -35,7 +35,7 @@ T1 model + persistence ── T2 scheduler + single file ── T3 directories �
 ## Task List
 ### Phase 1: Core path
 - [x] T1: Crate scaffold, model types, `queue.json` load/save, `config::atomic_write` export (S)
-- [ ] T2: Scheduler + workers, single-file upload/download, snapshot + `Changed` (M)
+- [x] T2: Scheduler + workers, single-file upload/download, snapshot + `Changed` (M)
 - [ ] T3: Directory items (lazy expansion, merge), 1,000-file round trip (M)
 ### Checkpoint A: files and trees move correctly (AC1)
 ### Phase 2: Robustness
@@ -75,3 +75,12 @@ _Appended per task during implementation._
 - `QueueItem` gained a pub field **`conflict: Option<ConflictRule>`** (the per-item rule from `NewTransfer`, needed after a restart); spec updated. `ItemState` carries `#[allow(clippy::large_enum_variant)]` (two `Entry` values in `AwaitingDecision`).
 - `queue.json` (`store.rs`): `{ "version": 1, "next_id", "items": [...] }`; `RemotePath` is stored as a string and an item whose remote path no longer parses is dropped with the rest loaded; an item whose **local path is not UTF-8** is not saved (warning) rather than failing the whole save. `next_id` is raised above any loaded id. Corrupt / newer-version → `queue.json.bak-<unix-secs>`, warning, empty queue.
 - 8 unit tests (every state shape, Active/Awaiting → Pending with offset, Completed dropped, corrupt, version 2, invalid remote path, id reuse).
+
+### T2 Scheduler + single files (done)
+- `queue.rs` (public API types + `Queue` handle), `scheduler.rs` (the one task that owns all state), `worker.rs` (the file I/O of one item). The handle allocates `TransferId`s itself (`AtomicU64`, seeded from `queue.json`) so `enqueue` can return them synchronously.
+- Scheduler loop: `select!` over commands, finished jobs and one computed wake-up time (progress sampling 100 ms while anything runs, retry timers, idle-connection expiry, 1 s save debounce); no timer ticks while idle, so paused-time tests work. `Changed` and the published snapshot are rate-limited to 10 Hz; the snapshot is also published right before `Idle` so a test (or UI) that waits for `Idle` sees the final state.
+- One job = one `tokio::spawn`ed task that takes a pooled connection for its site (or `Connector::connect`s one) and reports back with `Finished`. A connection goes back to the pool only after a **successful** job (anything else drops and closes it in the background); the pool closes connections idle > 30 s. Cancelling = aborting the task (the connection is dropped, never reused).
+- `ProgressCell { offset, written }`: the worker stores bytes, the scheduler samples them; `item.transferred = offset + written`.
+- A freshly started empty queue does not emit `Idle`.
+- Directories (T3), conflicts (T4), retries (T5), rates (T6) and `shutdown` persistence details (T7) are not in yet; `Queue::resolve` and the conflict types arrive with T4. `tests/support`: `TestConnector` + `CountingFs` over `RootedFs` (counts in-flight transfers and connects, optional per-transfer delay).
+- 6 tests: concurrency cap (peak == 3, never > 3), byte-identical uploads/downloads, connection reuse, pause/resume, failing item keeps the queue going, unknown site → "site was deleted".
