@@ -36,8 +36,8 @@ T1 model + persistence ── T2 scheduler + single file ── T3 directories �
 ### Phase 1: Core path
 - [x] T1: Crate scaffold, model types, `queue.json` load/save, `config::atomic_write` export (S)
 - [x] T2: Scheduler + workers, single-file upload/download, snapshot + `Changed` (M)
-- [ ] T3: Directory items (lazy expansion, merge), 1,000-file round trip (M)
-### Checkpoint A: files and trees move correctly (AC1)
+- [x] T3: Directory items (lazy expansion, merge), 1,000-file round trip (M)
+### Checkpoint A: files and trees move correctly (AC1) — reached
 ### Phase 2: Robustness
 - [ ] T4: Conflict rules + `Ask` / `resolve` / `apply_to_all` (M)
 - [ ] T5: Resume, automatic retry with back-off, manual retry/remove/cancel, `FlakyFs` (M)
@@ -84,3 +84,9 @@ _Appended per task during implementation._
 - A freshly started empty queue does not emit `Idle`.
 - Directories (T3), conflicts (T4), retries (T5), rates (T6) and `shutdown` persistence details (T7) are not in yet; `Queue::resolve` and the conflict types arrive with T4. `tests/support`: `TestConnector` + `CountingFs` over `RootedFs` (counts in-flight transfers and connects, optional per-transfer delay).
 - 6 tests: concurrency cap (peak == 3, never > 3), byte-identical uploads/downloads, connection reuse, pause/resume, failing item keeps the queue going, unknown site → "site was deleted".
+
+### T3 Directory items (done)  → Checkpoint A reached
+- A directory item creates the target (an existing directory merges; an existing *file* → `not a directory` failure), lists the source and inserts its children **right after itself, in listing order** (`Scheduler::expand` uses `Vec::splice`), then completes as `Outcome::Created`. Children inherit site, direction and conflict rule and get `parent = Some(dir id)`; ids come from the same shared counter.
+- Skipped with a log line: symlinks, special files, and **unsafe names** (`safe_name`: exactly one normal path component, no `/`, `\`, NUL, `.`/`..`, no drive prefixes), so a hostile server cannot make a download write outside its target.
+- AC1 verified for both directions: 1,000 files over 50 directories (5 × (1 + 9)), SHA-256 of every file and the directory list equal, peak concurrency ≤ 4. 1,051 `ItemFinished` events (files + 50 dirs + root); `completed` correctly stays capped at 1,000.
+- `Harness` counts `ItemFinished` events (`finished_ok` / `finished_failed`) while waiting for `Idle`. 8 tree tests + 1 unit test.

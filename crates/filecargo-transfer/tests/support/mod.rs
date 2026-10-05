@@ -176,6 +176,9 @@ pub struct Harness {
     pub server: tempfile::TempDir,
     pub site: SiteId,
     pub data: tempfile::TempDir,
+    /// `ItemFinished` events seen so far, successful and failed.
+    pub finished_ok: usize,
+    pub finished_failed: usize,
 }
 
 impl Harness {
@@ -202,6 +205,8 @@ impl Harness {
             server,
             site,
             data,
+            finished_ok: 0,
+            finished_failed: 0,
         }
     }
 
@@ -209,8 +214,11 @@ impl Harness {
     pub async fn idle(&mut self) {
         let wait = async {
             while let Some(event) = self.events.recv().await {
-                if event == QueueEvent::Idle {
-                    return;
+                match event {
+                    QueueEvent::Idle => return,
+                    QueueEvent::ItemFinished { ok: true, .. } => self.finished_ok += 1,
+                    QueueEvent::ItemFinished { ok: false, .. } => self.finished_failed += 1,
+                    _ => {}
                 }
             }
             panic!("the event channel closed before the queue went idle");
@@ -242,4 +250,61 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+/// A tree like `top0/sub0 .. top4/sub8`: 5 + 45 = 50 directories, `per_dir` files in each.
+pub fn build_tree(root: &Path, per_dir: usize) {
+    let mut seed = 1u64;
+    std::fs::create_dir_all(root).unwrap();
+    for a in 0..5 {
+        let top = root.join(format!("top{a}"));
+        std::fs::create_dir_all(&top).unwrap();
+        let mut dirs = vec![top.clone()];
+        for b in 0..9 {
+            let sub = top.join(format!("sub{b}"));
+            std::fs::create_dir_all(&sub).unwrap();
+            dirs.push(sub);
+        }
+        for dir in dirs {
+            for f in 0..per_dir {
+                seed += 1;
+                std::fs::write(
+                    dir.join(format!("file{f:02}.dat")),
+                    sample_bytes(seed, (seed as usize * 37) % 3000),
+                )
+                .unwrap();
+            }
+        }
+    }
+}
+
+/// Relative path (with `/`) of every file under `root` -> SHA-256, and the directories.
+pub fn tree_hashes(root: &Path) -> (std::collections::BTreeMap<String, String>, Vec<String>) {
+    fn walk(
+        base: &Path,
+        dir: &Path,
+        files: &mut std::collections::BTreeMap<String, String>,
+        dirs: &mut Vec<String>,
+    ) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let relative = entry
+                .path()
+                .strip_prefix(base)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let kind = entry.file_type().unwrap();
+            if kind.is_dir() {
+                dirs.push(relative);
+                walk(base, &entry.path(), files, dirs);
+            } else if kind.is_file() {
+                files.insert(relative, sha256_hex(&std::fs::read(entry.path()).unwrap()));
+            }
+        }
+    }
+    let (mut files, mut dirs) = (std::collections::BTreeMap::new(), Vec::new());
+    walk(root, root, &mut files, &mut dirs);
+    dirs.sort();
+    (files, dirs)
 }

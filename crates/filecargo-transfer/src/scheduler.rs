@@ -13,7 +13,7 @@ use tokio::time::Instant;
 use crate::queue::{
     Connector, QueueEvent, QueueItemView, QueueLimits, QueueSnapshot, Shared, Totals,
 };
-use crate::worker::{self, Job, JobResult, ProgressCell};
+use crate::worker::{self, Child, Job, JobResult, ProgressCell};
 use crate::{ItemState, NewTransfer, Outcome, QueueItem, TransferError, TransferId, store};
 
 const COMPLETED_CAP: usize = 1_000;
@@ -344,12 +344,47 @@ impl Scheduler {
                 keep(self, conn);
                 self.complete(index, outcome);
             }
+            JobResult::Expanded(children) => {
+                keep(self, conn);
+                self.expand(index, children);
+                self.complete(index, Outcome::Created);
+            }
             JobResult::Failed(error) => {
                 self.close_in_background(conn);
                 self.fail(index, error);
             }
         }
         self.touch(true);
+    }
+
+    /// Puts a directory's children right after it, in listing order.
+    fn expand(&mut self, index: usize, children: Vec<Child>) {
+        let parent = self.pending[index].item.clone();
+        let slots: Vec<Slot> = children
+            .into_iter()
+            .map(|child| {
+                let id = TransferId(
+                    self.shared
+                        .next_id
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                );
+                Slot::new(QueueItem {
+                    id,
+                    site: parent.site,
+                    direction: parent.direction,
+                    local: child.local,
+                    remote: child.remote,
+                    is_dir: child.is_dir,
+                    size: child.size,
+                    transferred: 0,
+                    state: ItemState::Pending,
+                    attempts: 0,
+                    parent: Some(parent.id),
+                    conflict: parent.conflict,
+                })
+            })
+            .collect();
+        self.pending.splice(index + 1..index + 1, slots);
     }
 
     fn complete(&mut self, index: usize, outcome: Outcome) {
