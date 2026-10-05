@@ -134,7 +134,7 @@ level = "info"                # error | warn | info | debug | trace
   `<config>/.lock`, so two instances can't interleave between the check and the rename.
 - **Corrupt or invalid file**: `load()` returns `ConfigError::Parse { path, line, msg }` (or
   `Invalid { … }`); the file is **never** overwritten automatically. Front-ends show the error;
-  an explicit `reset()` moves it to `servers.toml.bak-<timestamp>` first.
+  an explicit `ConfigStore::reset(&Paths)` (an associated fn, since `open` fails on such a file) moves it to `servers.toml.bak-<unix-seconds>` and returns the backup path.
 - `version` > supported → error, no write (protects files from a newer filecargo).
 
 ## Secrets
@@ -184,6 +184,7 @@ impl ConfigStore {
     pub fn settings(&self) -> &Settings;
     pub fn update_settings(&mut self, f: impl FnOnce(&mut Settings)) -> Result<(), ConfigError>;
     pub fn reload(&mut self) -> Result<(), ConfigError>;
+    pub fn reset(paths: &Paths) -> Result<Option<PathBuf>, ConfigError>;   // backs up an unreadable servers.toml
     pub fn secrets(&self) -> &dyn SecretStore;
     pub fn import_filezilla(&mut self, path: &Path, opts: ImportOptions) -> Result<ImportReport, ImportError>;
 }

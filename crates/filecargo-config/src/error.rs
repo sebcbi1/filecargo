@@ -19,6 +19,14 @@ pub enum ConfigError {
         line: usize,
         msg: String,
     },
+    #[error(
+        "{path} was written by a newer filecargo (file version {found}, supported {supported})"
+    )]
+    UnsupportedVersion {
+        path: PathBuf,
+        found: u32,
+        supported: u32,
+    },
     #[error("cannot serialize config: {0}")]
     Serialize(String),
     #[error("invalid server tree: {0}")]

@@ -1,3 +1,6 @@
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use serde::{Deserialize, Serialize};
 
 use crate::error::ConfigError;
@@ -18,41 +21,91 @@ struct ServersFile {
 }
 
 /// Owns the server tree and its on-disk representation.
+///
+/// Several processes (the GUI and the TUI) may share one config directory. Every write takes
+/// an exclusive lock, re-reads the file if another instance changed it, applies the operation
+/// on top of that state, and only then writes, so concurrent edits merge instead of clobbering.
 #[derive(Debug)]
 pub struct ConfigStore {
     paths: Paths,
     tree: ServerTree,
+    /// Bytes of `servers.toml` as last read or written (`None` = file did not exist).
+    loaded: Option<Vec<u8>>,
 }
 
 impl ConfigStore {
     /// Loads the store. A missing `servers.toml` yields an empty tree and writes nothing.
+    ///
+    /// A corrupt or newer-versioned file is an error and is never touched; see [`Self::reset`].
     pub fn open(paths: Paths) -> Result<Self, ConfigError> {
-        let tree = load_tree(&paths)?;
-        Ok(Self { paths, tree })
+        let loaded = fsio::read_optional(&paths.servers())?;
+        let tree = parse_tree(&paths, loaded.as_deref())?;
+        Ok(Self {
+            paths,
+            tree,
+            loaded,
+        })
     }
 
     pub fn tree(&self) -> &ServerTree {
         &self.tree
     }
 
-    /// Applies `op`: validates the resulting tree, then writes it atomically. On any error the
-    /// file and the in-memory tree are unchanged.
+    /// Re-reads `servers.toml` if another instance changed it. On error the in-memory tree
+    /// is kept as it was.
+    pub fn reload(&mut self) -> Result<(), ConfigError> {
+        let current = fsio::read_optional(&self.paths.servers())?;
+        if current != self.loaded {
+            self.tree = parse_tree(&self.paths, current.as_deref())?;
+            self.loaded = current;
+        }
+        Ok(())
+    }
+
+    /// Applies `op` on top of the latest on-disk state: validates the resulting tree, then
+    /// writes it atomically. On any error the file and the in-memory tree are unchanged.
     pub fn apply(&mut self, op: TreeOp) -> Result<NodeId, ConfigError> {
+        let _lock = fsio::lock_exclusive(&self.paths.lock())?;
+        self.reload()?;
         let mut next = self.tree.clone();
         let outcome = next.apply(op)?;
         next.validate()?;
-        fsio::write_atomic(&self.paths.servers(), serialize(&next)?.as_bytes())?;
+        let bytes = serialize(&next)?.into_bytes();
+        fsio::write_atomic(&self.paths.servers(), &bytes)?;
         self.tree = next;
+        self.loaded = Some(bytes);
         Ok(outcome.node)
+    }
+
+    /// Moves an unreadable `servers.toml` aside to `servers.toml.bak-<unix-seconds>` so a fresh
+    /// store can be opened. Returns the backup path, or `None` when there was no file.
+    pub fn reset(paths: &Paths) -> Result<Option<PathBuf>, ConfigError> {
+        let _lock = fsio::lock_exclusive(&paths.lock())?;
+        let path = paths.servers();
+        if !path.exists() {
+            return Ok(None);
+        }
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let backup = (0..)
+            .map(|n| match n {
+                0 => path.with_extension(format!("toml.bak-{secs}")),
+                n => path.with_extension(format!("toml.bak-{secs}-{n}")),
+            })
+            .find(|candidate| !candidate.exists())
+            .unwrap_or_else(|| path.with_extension("toml.bak"));
+        fsio::rename(&path, &backup)?;
+        Ok(Some(backup))
     }
 }
 
-fn load_tree(paths: &Paths) -> Result<ServerTree, ConfigError> {
+fn parse_tree(paths: &Paths, bytes: Option<&[u8]>) -> Result<ServerTree, ConfigError> {
     let path = paths.servers();
-    let Some(bytes) = fsio::read_optional(&path)? else {
+    let Some(bytes) = bytes else {
         return Ok(ServerTree::default());
     };
-    let text = String::from_utf8_lossy(&bytes);
+    let text = String::from_utf8_lossy(bytes);
     let file: ServersFile = toml::from_str(&text).map_err(|e| {
         let line = e
             .span()
@@ -64,6 +117,13 @@ fn load_tree(paths: &Paths) -> Result<ServerTree, ConfigError> {
             msg: e.message().to_string(),
         }
     })?;
+    if file.version > FILE_VERSION {
+        return Err(ConfigError::UnsupportedVersion {
+            path,
+            found: file.version,
+            supported: FILE_VERSION,
+        });
+    }
     Ok(ServerTree::from_parts(file.folders, file.sites)?)
 }
 
