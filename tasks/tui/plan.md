@@ -28,8 +28,8 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 ## Task List
 ### Phase 1: Walking skeleton
 - [x] T1: Crate + bin, args (`--version`, `--config-dir`), `App::start`, terminal init/restore + panic hook (plus our own mouse-capture/bracketed-paste enable and disable), loop skeleton rendering an empty layout (S)
-- [ ] T2: Layout, local pane `Table`, `UiState` focus/cursor/selection, reducer for navigation and selection, too-small screen (M)
-### Checkpoint A: binary browses local files; AC3, AC5 green; first snapshots reviewed
+- [x] T2: Layout, local pane `Table`, `UiState` focus/cursor/selection, reducer for navigation and selection, too-small screen (M)
+### Checkpoint A: binary browses local files; AC3, AC5 green; first snapshots reviewed — reached
 ### Phase 2: Servers and sessions
 - [ ] T3: Server tree (`tui-tree-widget`), tree bindings, connect/disconnect, remote pane (M)
 - [ ] T4: Form toolkit + site editor (new/edit) + new folder/rename/move/delete dialogs (M)
@@ -63,3 +63,12 @@ _Appended per task during implementation._
 - `guard.rs`: `enter()` = `ratatui::init()` (raw mode, alternate screen, its own panic hook) **plus** mouse capture and bracketed paste, which `init` does not enable; our panic hook disables them first and chains to ratatui's. `leave()` undoes everything and is safe to call twice or without a terminal. `install_panic_restore(restore)` is the injectable piece AC5 tests.
 - `app_loop.rs`: `tokio::select!` over crossterm's `EventStream`, `snapshots.changed()` (an `Err` means the app has quit → return) and a 250 ms tick that only marks the screen dirty while transfers or a connection are active. Key release events are dropped (`is_press() || is_repeat()`, needed on Windows). The renderer is a `&mut dyn FnMut` so a test can make it panic.
 - Verified: `tests/panic.rs` (restore runs **before** the previous hook prints the message; `leave()` without a terminal); and by driving the real binary through a pseudo-terminal (`script`): it enters the alternate screen with mouse + paste, draws, exits 0 on `q`, and ends with the disable / leave / show-cursor sequences.
+
+### T2 Layout + local pane (done) → Checkpoint A reached (AC3, AC5)
+- `keymap.rs`: **one table** (`BINDINGS`: context, keys, help label, action); `lookup(context, key)` checks the focused context, then `Global`. Letters ignore the SHIFT modifier (terminals disagree on whether `N` carries it); `Shift-Tab` is accepted as `BackTab` or `Tab+SHIFT`. The help overlay (T8) will draw from the same table.
+- `layout.rs` (pure): ≥ 80×24 or "terminal too small (needs 80x24)"; status line 1 row; bottom panel 30 % of the body (≥ 6 rows, `F10` gives it the whole body); tree 20 % with ≥ 18 columns, shown by default from 100 columns (`F9` overrides); panes split the rest evenly.
+- `UiState`: focus, size, `PaneUi { cursor, offset, selected: BTreeSet<String>, seen: (path, generation) }` per pane, `now` and `home` injected (drawing stays deterministic), `color` from `NO_COLOR`. Row 0 of a pane is the `..` row when the directory has a parent (app-core's entries never contain it).
+- **Selection rule (AC3)** in `reducer::sync`: same path + new generation (refresh, re-sort) → selection pruned to names that still exist and the cursor follows its name; different path → cursor 0, nothing selected; a vanished remote pane resets its state and moves the focus to Local.
+- Reducer (file panes): cursor keys (Up/Down/PgUp/PgDn/Home/End + `j`/`k`), `Enter` (dir → `Navigate`, `..` → `Up`, **file → Upload/Download of that file**), `Backspace`, `Space`/`Ins`, `*`, `Ctrl-a`, `F5`/`t` (selection or cursor row, clears the selection), `F8`/`Del` (remote only), `Ctrl-r`, `.` (flips `show_hidden` through `UpdateSettings`), `s` (cycles Name↑↓ → Size↑↓ → Modified↑↓), `Tab`/`Shift-Tab` over what exists, `F9`, `F10`, `q`/`Ctrl-q`. Dialog-based keys (`F7`, `F2`, `c`, `g`, `F1`, `Alt-n`) arrive with their tasks.
+- View: bordered panes with `Name / Size / Modified` tables (dirs `name/` bold blue, selected rows `*` + bold yellow, cursor row reversed when focused and underlined otherwise, `NO_COLOR` falls back to bold/reverse/markers), local title with `~`, remote placeholder, a pane error in red on its last row. **Times are shown in UTC** (no local-time conversion without a time-zone dependency; revisit when the GUI needs it).
+- Tests: 27 (`layout` 5, `pane` formatting 3, `reducer` 13 incl. AC3 cases, 6 view tests with 4 reviewed `insta` snapshots: disconnected 100×30 / 80×24, connected, too small; style checks for cursor/selection/NO_COLOR). Driven through a pseudo-terminal: exits cleanly after cursor keys + `q`.
