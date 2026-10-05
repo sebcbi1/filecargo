@@ -1,0 +1,3 @@
+# Minimum supported Rust version: 1.92 (mise has no ">=" ranges; stable is currently 1.99)
+[tools]
+rust = "stable"
