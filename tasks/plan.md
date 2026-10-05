@@ -113,3 +113,27 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 
 ## Hand-off Notes
 _Appended per task during implementation: what changed, where, and any deviation from the spec._
+
+### T1 Workspace + `Paths` (done)
+- Root `Cargo.toml`: resolver 3, edition 2024, `rust-version = "1.92"`, all versions in `[workspace.dependencies]`, `default-members = ["crates/filecargo-config"]` (add new non-GUI crates here), `unsafe_code = "forbid"`, clippy `unwrap_used`/`expect_used` = warn. `clippy.toml` allows both inside `#[test]`/`cfg(test)`. Integration-test helper fns need a file-level `#![allow(clippy::unwrap_used, clippy::expect_used)]`.
+- `paths.rs`: `Paths::resolve()` (honors `FILECARGO_CONFIG_DIR`, else `etcetera::choose_base_strategy()` + `filecargo/`), `Paths::from_override(Option<PathBuf>)` is the pure constructor tests use.
+
+### T2 CI (done)
+- `.github/workflows/ci.yml`: `check` job on ubuntu/macos/windows (fmt, clippy `-D warnings`, `cargo test`), toolchain via `jdx/mise-action`. `actionlint` is not installed (needs approval); the first real run is the validation. Repo: private `sebcbi1/filecargo`, pushed with `jj git push --bookmark main`.
+
+### T3 Sites + persistence (done)
+- `model.rs` (ids, `Protocol`, `Auth`, `FtpMode`, `Site`, `Folder`), `tree.rs` (`ServerTree`, whole-tree `validate()`), `fsio.rs` (`read_optional`, `write_atomic`), `store.rs` (`ConfigStore`).
+- **Deviation:** `Auth` serializes as a sub-table `[site.auth]` (toml crate output), not the inline table shown in the spec example. Format is otherwise as specified; golden test pins it.
+- `ConfigStore::open(paths)` takes no `SecretStore` yet; T7 adds it (breaking change to the signature is expected).
+
+### T4 Folders and ops (done)
+- `TreeOp`: `AddFolder`, `AddSite`, `UpdateSite`, `Rename`, `Move { node, parent }`, `Duplicate`, `Delete`. `ServerTree::apply` returns a crate-private `Outcome { node, removed_sites, duplicated_from }`, which T7 will use for secret cleanup; `ConfigStore::apply` returns just the `NodeId`.
+- Sites and folders share one sibling name space (case-insensitive, trimmed).
+- Property test (`tests/tree_props.rs`) runs 256 cases by default (about 12 s); `PROPTEST_CASES=1000` takes about 50 s, because every accepted op fsyncs and the file is reopened.
+
+### T5 Multi-instance + corrupt files (done)
+- `ConfigStore::apply` = exclusive lock on `<config>/.lock` (`std::fs::File::lock`) → `reload()` if bytes differ → apply on clone → validate → atomic write. `reload()` is public.
+- Corrupt file → `ConfigError::Parse { path, line, msg }`, newer version → `UnsupportedVersion`; neither is ever overwritten.
+- **Deviation:** reset is the associated fn `ConfigStore::reset(&Paths) -> Result<Option<PathBuf>>` (spec updated), because `open` fails on a corrupt file.
+- Mutation check: removing the lock makes `concurrent_writers_lose_no_operation` fail 3/3 runs.
+- A rejected op still creates `<config>/` and `.lock` (the lock is taken before validation); `servers.toml` is untouched.
