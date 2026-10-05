@@ -293,8 +293,13 @@ mod scenarios {
     pub async fn large_directory_lists_completely(fx: &Fixture) {
         let count = entry_count();
         fx.fs.mkdir(&fx.path("many")).await.unwrap();
+        // Directories, not files: on FTP every upload opens a data connection, and thousands of
+        // them exhaust the server's passive ports (TIME_WAIT).
         for i in 0..count {
-            fx.put(&format!("many/f{i:05}"), b"").await;
+            fx.fs
+                .mkdir(&fx.path(&format!("many/d{i:05}")))
+                .await
+                .unwrap();
         }
         let entries = fx.fs.list(&fx.path("many")).await.unwrap();
         assert_eq!(entries.len(), count);
@@ -400,5 +405,22 @@ mod network {
         fixture_for(site, "fcpass").await
     }
 
+    async fn ftp_fixture_on(port: u16) -> Fixture {
+        let mut site = Site::new("docker-ftp", Protocol::Ftp, "127.0.0.1");
+        site.port = Some(port);
+        site.user = "ftpuser".to_owned();
+        fixture_for(site, "ftppass").await
+    }
+
+    async fn ftp_fixture() -> Fixture {
+        ftp_fixture_on(2121).await
+    }
+
+    async fn ftp_list_fixture() -> Fixture {
+        ftp_fixture_on(2123).await
+    }
+
     contract_suite!(sftp, sftp_fixture);
+    contract_suite!(ftp, ftp_fixture);
+    contract_suite!(ftp_list, ftp_list_fixture);
 }

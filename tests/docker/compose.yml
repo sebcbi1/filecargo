@@ -25,7 +25,7 @@ services:
     build: ./proftpd
     environment: { CONF: explicit.conf }
     volumes: ["./certs:/certs:ro"]
-    ports: ["2121:2121", "30000-30009:30000-30009"]
+    ports: ["2121:2121", "30000-30049:30000-30049"]
     healthcheck: &ftp-health
       test: ["CMD-SHELL", "nc -w1 127.0.0.1 $$(awk '/^Port/{print $$2}' /etc/proftpd/$$CONF) </dev/null"]
       interval: 2s
@@ -36,14 +36,14 @@ services:
     build: ./proftpd
     environment: { CONF: implicit.conf }
     volumes: ["./certs:/certs:ro"]
-    ports: ["9990:9990", "30010-30019:30010-30019"]
+    ports: ["9990:9990", "30050-30099:30050-30099"]
     healthcheck: *ftp-health
 
   ftps-reuse:
     build: ./proftpd
     environment: { CONF: reuse.conf }
     volumes: ["./certs:/certs:ro"]
-    ports: ["2122:2122", "30020-30029:30020-30029"]
+    ports: ["2122:2122", "30100-30149:30100-30149"]
     healthcheck: *ftp-health
 
   # Same as `ftp`, but FEAT does not advertise MLSD/MLST: exercises the LIST fallback.
@@ -51,5 +51,5 @@ services:
     build: ./proftpd
     environment: { CONF: list.conf }
     volumes: ["./certs:/certs:ro"]
-    ports: ["2123:2123", "30030-30039:30030-30039"]
+    ports: ["2123:2123", "30150-30199:30150-30199"]
     healthcheck: *ftp-health

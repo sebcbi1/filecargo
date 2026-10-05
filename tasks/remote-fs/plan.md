@@ -55,7 +55,7 @@ T3 docker servers + CI integration job ─────────────�
 ### Checkpoint B: AC3, AC4, AC7, AC8 + contract (SFTP) green
 ### Phase 3: FTP / FTPS
 - [x] T8: FTP connection, login, `TYPE I`, FEAT/UTF8, MLSD parser + LIST fallback, metadata ops, serialized control connection (M)
-- [ ] T9: FTP download/upload with resume (`REST` / `APPE`), cancel ⇒ broken, NOOP keepalive, redacted command log (M)
+- [x] T9: FTP download/upload with resume (`REST` / `APPE`), cancel ⇒ broken, NOOP keepalive, redacted command log (M)
 - [ ] T10: FTPS explicit + implicit: pinning verifier, cert prompt and pinning file, data-channel TLS, 522/534 ⇒ `TlsSessionReuseRequired` (M)
 - [ ] T11: Active mode (Linux CI), whole-run log redaction test, final contract run on all backends, coverage (S)
 ### Checkpoint C: all 10 AC green, coverage ≥ 80 % (excluding Windows-only agent code), human review
@@ -139,3 +139,11 @@ _Appended per task during implementation._
 - Paths containing CR/LF are refused before they reach the wire (command injection guard).
 - New docker service **`ftp-list`** (port 2123, ProFTPD `FactsAdvertise off`) forces the LIST fallback; `docker_ftp(port)` helper in `tests/support`.
 - Verified: 23 parser unit tests; 8 integration tests (both listing paths, AlreadyExists / DirectoryNotEmpty / chmod / rename / unicode names, 12 concurrent tasks on one connection, injection guard, retry-once login, refused connect). `download` / `upload` are still `Unsupported` until T9.
+
+### T9 FTP transfers (done)
+- `download`: optional `REST` (`resume_transfer`) + `RETR` as a stream; `upload`: offset 0 → `STOR`, offset > 0 → `SIZE == offset` check then `APPE`. Every read/write is bounded by `timeout_secs`; `TransferStream::finish()` always runs on success so the server's verdict is read. A failing **sink/source** drops the stream and returns `LocalIo`; the library defers the 426 reply and the next command consumes it, so the connection stays usable (tested). Anything else mid-transfer (read/write error, timeout, dropped future) leaves the connection broken.
+- Keepalive: a task per `FtpFs` (holds a `Weak`, aborted on `close` / drop) sends `NOOP` when the connection has been free for `keepalive_secs`; it skips a tick while a call holds the lock. Proven with a control experiment against `ftp-list`, whose ProFTPD has `TimeoutIdle 5`: with keepalive 1 s the connection survives 8 s idle, with keepalive 3600 s it is dropped.
+- Logging on target `filecargo::protocol` at `debug`: `> VERB path` per command (never the PASS argument: login logs `> USER x` and `> PASS ***`), and `< code text` for error replies.
+- **Test-server config** (`tests/docker/proftpd/*.conf`): `AllowOverwrite`, `AllowStoreRestart`, `AllowRetrieveRestart on` (ProFTPD refuses overwrite and `APPE`/`REST STOR` by default); passive ranges widened to 50 ports per server (30000-30049, 30050-30099, 30100-30149, 30150-30199): 10 ports ran dry through TIME_WAIT under parallel tests.
+- **Contract-suite change:** the 10,000-entry scenario now creates directories with `mkdir` (control channel only); 10,000 uploads exhaust any FTP server's passive ports. And `RemoteFs::remove_all` now tries `remove_dir` before listing a child directory, so deleting 10,000 empty directories no longer opens 10,000 data connections (the first run of this took > 12 min).
+- Contract suite is green on **rooted, sftp, ftp, ftp_list** (68 tests, ~23 s). `cargo it`: 46 unit + 104 integration tests.

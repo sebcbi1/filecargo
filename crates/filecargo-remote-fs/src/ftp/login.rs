@@ -74,9 +74,11 @@ pub(crate) async fn open(site: &Site, ctx: &ConnectContext) -> Result<FtpFs, Con
     }
     tracing::info!(target: "filecargo::protocol", site = %site.name, host, port, "connecting over FTP");
     let mut ftp = tcp_ftp(&host, port, timeout).await?;
+    tracing::debug!(target: "filecargo::protocol", "connected; welcome: {:?}", ftp.get_welcome_msg());
 
     match &site.auth {
         Auth::Anonymous => {
+            tracing::debug!(target: "filecargo::protocol", "> USER anonymous");
             ftp.login("anonymous", "anonymous@").await.map_err(|e| {
                 if rejected(&e) {
                     auth_failed("anonymous")
@@ -93,6 +95,8 @@ pub(crate) async fn open(site: &Site, ctx: &ConnectContext) -> Result<FtpFs, Con
                     password_prompt(site, retry)
                 })
                 .await?;
+                tracing::debug!(target: "filecargo::protocol", "> USER {}", site.user);
+                tracing::debug!(target: "filecargo::protocol", "> PASS ***");
                 match ftp
                     .login(site.user.as_str(), obtained.value.expose_secret())
                     .await
@@ -133,5 +137,6 @@ pub(crate) async fn open(site: &Site, ctx: &ConnectContext) -> Result<FtpFs, Con
         ftp.set_mode(Mode::Passive);
         ftp.set_passive_nat_workaround(true);
     }
-    Ok(FtpFs::new(ftp, features, site.protocol, timeout))
+    let keepalive = Duration::from_secs(u64::from(ctx.timeouts.keepalive_secs.max(1)));
+    Ok(FtpFs::new(ftp, features, site.protocol, timeout, keepalive))
 }

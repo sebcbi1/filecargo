@@ -146,3 +146,18 @@ pub fn docker_ftp_site(port: u16) -> Site {
     site.auth = Auth::Password { remember: false };
     site
 }
+
+/// Like [`docker_ftp`], with a custom keepalive interval and the shared trust of `ctx`.
+pub async fn docker_ftp_with_keepalive(port: u16, keepalive_secs: u32) -> Session {
+    let dir = tempfile::tempdir().unwrap();
+    let prompter = TestPrompter::new();
+    prompter.answer(&["ftppass"], false);
+    let mut ctx = ConnectContext::new(
+        Paths::from_override(Some(dir.path().join("cfg"))),
+        Arc::new(MemoryStore::new()),
+        prompter,
+    );
+    ctx.user_known_hosts = None;
+    ctx.timeouts.keepalive_secs = keepalive_secs;
+    connect(&docker_ftp_site(port), &ctx).await.unwrap()
+}

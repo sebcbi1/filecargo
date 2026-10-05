@@ -79,7 +79,12 @@ pub trait RemoteFs: Send + Sync {
                 message: e.to_string(),
             })?;
             if child.kind == EntryKind::Dir {
-                self.remove_all(&child_path).await?;
+                // An empty directory goes with one cheap call; only a non-empty one (or a real
+                // failure, which then resurfaces) needs listing. On FTP every listing opens a
+                // data connection.
+                if self.remove_dir(&child_path).await.is_err() {
+                    self.remove_all(&child_path).await?;
+                }
             } else {
                 self.remove_file(&child_path).await?;
             }

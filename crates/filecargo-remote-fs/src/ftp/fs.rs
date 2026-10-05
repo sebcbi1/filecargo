@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 use std::future::Future;
+use std::sync::{Arc, Weak};
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
 use filecargo_config::Protocol;
 use suppaftp::tokio::AsyncRustlsFtpStream;
 use suppaftp::{FtpError, FtpResult, Status};
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{Mutex, MutexGuard};
 
 use super::time::format_timestamp;
@@ -37,10 +38,11 @@ pub(crate) struct Inner {
 
 /// FTP / FTPS filesystem. One control connection, one command or transfer at a time.
 pub struct FtpFs {
-    inner: Mutex<Inner>,
+    inner: Arc<Mutex<Inner>>,
     pub(crate) features: Features,
     protocol: Protocol,
     pub(crate) timeout: Duration,
+    keepalive: tokio::task::JoinHandle<()>,
 }
 
 /// Exclusive use of the control connection for one call. If the future holding it is dropped
@@ -73,6 +75,7 @@ pub(crate) fn map_ftp(error: &FtpError, what: &str) -> FsError {
         FtpError::SecureError(message) => FsError::Disconnected(format!("TLS: {message}")),
         FtpError::UnexpectedResponse(response) => {
             let text = String::from_utf8_lossy(&response.body).into_owned();
+            tracing::debug!(target: "filecargo::protocol", "< {} {}", response.status.code(), text.trim_end());
             let lowered = text.to_ascii_lowercase();
             match response.status {
                 Status::NotAvailable => FsError::Disconnected(text),
@@ -137,12 +140,16 @@ impl FtpFs {
         features: Features,
         protocol: Protocol,
         timeout: Duration,
+        keepalive: Duration,
     ) -> Self {
+        let inner = Arc::new(Mutex::new(Inner { ftp, broken: false }));
+        let keepalive = tokio::spawn(keep_alive(Arc::downgrade(&inner), keepalive, timeout));
         Self {
-            inner: Mutex::new(Inner { ftp, broken: false }),
+            inner,
             features,
             protocol,
             timeout,
+            keepalive,
         }
     }
 
@@ -160,6 +167,14 @@ impl FtpFs {
 
     async fn list_raw(&self, dir: &RemotePath) -> Result<Vec<Entry>, FsError> {
         let path = arg(dir)?;
+        log_command(
+            if self.features.has("MLSD") {
+                "MLSD"
+            } else {
+                "LIST -a"
+            },
+            path,
+        );
         let mut op = self.begin().await?;
         let result = if self.features.has("MLSD") {
             timed(self.timeout, path, op.ftp().mlsd(Some(path)))
@@ -202,6 +217,7 @@ impl RemoteFs for FtpFs {
     }
 
     async fn home(&self) -> Result<RemotePath, FsError> {
+        log_command("PWD", "");
         let mut op = self.begin().await?;
         let result = timed(self.timeout, "PWD", op.ftp().pwd()).await;
         let result = result.and_then(|p| {
@@ -226,6 +242,7 @@ impl RemoteFs for FtpFs {
         let wanted = path.file_name().unwrap_or_default();
         let argument = arg(path)?;
         if self.features.has("MLST") {
+            log_command("MLST", argument);
             let mut op = self.begin().await?;
             let reply = timed(self.timeout, argument, op.ftp().mlst(Some(argument))).await;
             return match op.finish(reply) {
@@ -250,6 +267,7 @@ impl RemoteFs for FtpFs {
 
     async fn mkdir(&self, path: &RemotePath) -> Result<(), FsError> {
         let argument = arg(path)?;
+        log_command("MKD", argument);
         let mut op = self.begin().await?;
         let result = timed(self.timeout, argument, op.ftp().mkdir(argument)).await;
         let failed = result.is_err();
@@ -264,6 +282,8 @@ impl RemoteFs for FtpFs {
 
     async fn rename(&self, from: &RemotePath, to: &RemotePath) -> Result<(), FsError> {
         let (from_arg, to_arg) = (arg(from)?, arg(to)?);
+        log_command("RNFR", from_arg);
+        log_command("RNTO", to_arg);
         let mut op = self.begin().await?;
         let result = timed(self.timeout, from_arg, op.ftp().rename(from_arg, to_arg)).await;
         op.finish(result)
@@ -271,6 +291,7 @@ impl RemoteFs for FtpFs {
 
     async fn remove_file(&self, path: &RemotePath) -> Result<(), FsError> {
         let argument = arg(path)?;
+        log_command("DELE", argument);
         let mut op = self.begin().await?;
         let result = timed(self.timeout, argument, op.ftp().rm(argument)).await;
         op.finish(result)
@@ -278,6 +299,7 @@ impl RemoteFs for FtpFs {
 
     async fn remove_dir(&self, path: &RemotePath) -> Result<(), FsError> {
         let argument = arg(path)?;
+        log_command("RMD", argument);
         let mut op = self.begin().await?;
         let result = timed(self.timeout, argument, op.ftp().rmdir(argument)).await;
         let result = op.finish(result);
@@ -298,6 +320,7 @@ impl RemoteFs for FtpFs {
         let argument = arg(path)?;
         let mut op = self.begin().await?;
         let command = format!("CHMOD {:o} {argument}", mode & 0o7777);
+        log_command("SITE", &command);
         let result = timed(self.timeout, argument, op.ftp().site(command)).await;
         let result = match result {
             Err(FsError::Protocol {
@@ -318,6 +341,7 @@ impl RemoteFs for FtpFs {
             format_timestamp(time).ok_or(FsError::Unsupported("modification times before 1970"))?;
         let mut op = self.begin().await?;
         let command = format!("MFMT {stamp} {argument}");
+        log_command("MFMT", &format!("{stamp} {argument}"));
         let result = timed(
             self.timeout,
             argument,
@@ -330,29 +354,170 @@ impl RemoteFs for FtpFs {
 
     async fn download(
         &self,
-        _path: &RemotePath,
-        _offset: u64,
-        _sink: &mut (dyn AsyncWrite + Send + Unpin),
-        _progress: &dyn Progress,
+        path: &RemotePath,
+        offset: u64,
+        sink: &mut (dyn AsyncWrite + Send + Unpin),
+        progress: &dyn Progress,
     ) -> Result<u64, FsError> {
-        Err(FsError::Unsupported("download"))
+        let argument = arg(path)?;
+        let mut op = self.begin().await?;
+        log_command("RETR", argument);
+        let result = self
+            .download_inner(&mut op, argument, offset, sink, progress)
+            .await;
+        op.finish(result)
     }
 
     async fn upload(
         &self,
-        _path: &RemotePath,
-        _offset: u64,
-        _source: &mut (dyn AsyncRead + Send + Unpin),
-        _progress: &dyn Progress,
+        path: &RemotePath,
+        offset: u64,
+        source: &mut (dyn AsyncRead + Send + Unpin),
+        progress: &dyn Progress,
     ) -> Result<u64, FsError> {
-        Err(FsError::Unsupported("upload"))
+        let argument = arg(path)?;
+        let mut op = self.begin().await?;
+        log_command(if offset == 0 { "STOR" } else { "APPE" }, argument);
+        let result = self
+            .upload_inner(&mut op, argument, offset, source, progress)
+            .await;
+        op.finish(result)
     }
 
     async fn close(&self) {
+        self.keepalive.abort();
         if let Ok(mut op) = self.begin().await {
             let _ = tokio::time::timeout(self.timeout, op.ftp().quit()).await;
             // never reusable after QUIT
             op.guard.broken = true;
+        }
+    }
+}
+
+const CHUNK: usize = 64 * 1024;
+
+/// Commands go to the log without their credentials: only the verb and the path.
+pub(crate) fn log_command(verb: &str, argument: &str) {
+    tracing::debug!(target: "filecargo::protocol", "> {verb} {argument}");
+}
+
+impl FtpFs {
+    async fn download_inner(
+        &self,
+        op: &mut Op<'_>,
+        path: &str,
+        offset: u64,
+        sink: &mut (dyn AsyncWrite + Send + Unpin),
+        progress: &dyn Progress,
+    ) -> Result<u64, FsError> {
+        if offset > 0 {
+            let at = usize::try_from(offset)
+                .map_err(|_| FsError::Unsupported("offsets beyond usize"))?;
+            timed(self.timeout, path, op.ftp().resume_transfer(at)).await?;
+        }
+        let mut stream = timed(self.timeout, path, op.ftp().retr_as_stream(path)).await?;
+        let mut buf = vec![0u8; CHUNK];
+        let mut total = 0u64;
+        loop {
+            let n = match tokio::time::timeout(self.timeout, stream.read(&mut buf)).await {
+                Ok(Ok(n)) => n,
+                Ok(Err(e)) => return Err(FsError::Disconnected(format!("{path}: {e}"))),
+                Err(_) => return Err(FsError::Timeout),
+            };
+            if n == 0 {
+                break;
+            }
+            if let Err(e) = sink.write_all(&buf[..n]).await {
+                // The server is still sending; dropping the stream closes the data connection
+                // and the next command consumes the deferred reply.
+                drop(stream);
+                return Err(FsError::LocalIo(e.to_string()));
+            }
+            total += n as u64;
+            progress.advance(total);
+        }
+        sink.flush()
+            .await
+            .map_err(|e| FsError::LocalIo(e.to_string()))?;
+        timed(self.timeout, path, stream.finish()).await?;
+        Ok(total)
+    }
+
+    async fn upload_inner(
+        &self,
+        op: &mut Op<'_>,
+        path: &str,
+        offset: u64,
+        source: &mut (dyn AsyncRead + Send + Unpin),
+        progress: &dyn Progress,
+    ) -> Result<u64, FsError> {
+        let mut stream = if offset == 0 {
+            timed(self.timeout, path, op.ftp().put_with_stream(path)).await?
+        } else {
+            let size = timed(self.timeout, path, op.ftp().size(path)).await?;
+            if size as u64 != offset {
+                return Err(FsError::Protocol {
+                    code: None,
+                    message: format!("cannot resume at {offset}: remote file is {size} bytes"),
+                });
+            }
+            timed(self.timeout, path, op.ftp().append_with_stream(path)).await?
+        };
+        let mut buf = vec![0u8; CHUNK];
+        let mut total = 0u64;
+        loop {
+            let n = match source.read(&mut buf).await {
+                Ok(n) => n,
+                Err(e) => {
+                    drop(stream);
+                    return Err(FsError::LocalIo(e.to_string()));
+                }
+            };
+            if n == 0 {
+                break;
+            }
+            match tokio::time::timeout(self.timeout, stream.write_all(&buf[..n])).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => return Err(FsError::Disconnected(format!("{path}: {e}"))),
+                Err(_) => return Err(FsError::Timeout),
+            }
+            total += n as u64;
+            progress.advance(total);
+        }
+        // `finish` shuts the data connection down and reads the server's verdict.
+        timed(self.timeout, path, stream.finish()).await?;
+        Ok(total)
+    }
+}
+
+impl Drop for FtpFs {
+    fn drop(&mut self) {
+        self.keepalive.abort();
+    }
+}
+
+/// Sends `NOOP` whenever the control connection has been free for a whole interval, so idle
+/// servers do not drop it. Skips a tick while a call or transfer holds the connection.
+async fn keep_alive(inner: Weak<Mutex<Inner>>, every: Duration, timeout: Duration) {
+    loop {
+        tokio::time::sleep(every).await;
+        let Some(inner) = inner.upgrade() else { return };
+        let Ok(mut guard) = inner.try_lock() else {
+            continue;
+        };
+        if guard.broken {
+            return;
+        }
+        guard.broken = true;
+        log_command("NOOP", "");
+        if matches!(
+            tokio::time::timeout(timeout, guard.ftp.noop()).await,
+            Ok(Ok(()))
+        ) {
+            guard.broken = false;
+        } else {
+            tracing::warn!(target: "filecargo::protocol", "FTP keepalive failed; the connection is dead");
+            return;
         }
     }
 }

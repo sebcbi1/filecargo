@@ -257,8 +257,8 @@ pub mod local {
 |---|---|---|---|
 | `sftp` | `lscr.io/linuxserver/openssh-server` (pinned digest) | password user + key user (plain and encrypted key), bash shell | 2222 |
 | `ftp` | `tests/docker/proftpd/Dockerfile` (Alpine ProFTPD 1.3.8 + mod_tls), `explicit.conf` | plain + explicit TLS, `NoSessionReuseRequired` |
-| `ftps-implicit` | same image, `implicit.conf` | implicit TLS | 9990, passive 30010–30019 |
-| `ftps-reuse` | same image, `reuse.conf` | explicit TLS, session reuse required (ProFTPD default) | 2122, passive 30020–30029 |
+| `ftps-implicit` | same image, `implicit.conf` | implicit TLS | 9990, passive 30050–30099 |
+| `ftps-reuse` | same image, `reuse.conf` | explicit TLS, session reuse required (ProFTPD default) | 2122, passive 30100–30149 |
 
 - Passive ranges are published 1:1, with `MasqueradeAddress 127.0.0.1`. vsftpd (the first choice) was dropped: its listener process segfaults after the first completed TLS session on the dev host, on both Alpine 3.21 and Debian bookworm builds.
 - **Active mode** can't work through published localhost ports (servers refuse a `PORT` from
