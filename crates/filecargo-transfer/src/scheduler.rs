@@ -10,6 +10,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use tokio::time::Instant;
 
+use crate::progress::RateTracker;
 use crate::queue::{
     ConflictDecision, Connector, QueueEvent, QueueItemView, QueueLimits, QueueSnapshot, Shared,
     Totals,
@@ -59,6 +60,8 @@ struct Slot {
     retry_at: Option<Instant>,
     /// The owner's answer to this item's conflict.
     decided: Option<ConflictRule>,
+    /// Speed of the running attempt.
+    tracker: Option<RateTracker>,
 }
 
 impl Slot {
@@ -67,6 +70,7 @@ impl Slot {
             item,
             retry_at: None,
             decided: None,
+            tracker: None,
         }
     }
 }
@@ -109,6 +113,8 @@ struct Scheduler {
     pool: Vec<Idle>,
     /// An `apply_to_all` answer: used instead of asking until the queue is empty.
     override_rule: Option<ConflictRule>,
+    /// Bytes of the items finished since the queue was last idle (for the batch totals).
+    batch_bytes: u64,
 
     changed: bool,
     last_event: Instant,
@@ -147,6 +153,7 @@ impl Scheduler {
             active: HashMap::new(),
             pool: Vec::new(),
             override_rule: None,
+            batch_bytes: 0,
             changed: true,
             last_event: now.checked_sub(EVENT_INTERVAL).unwrap_or(now),
             persist_dirty: false,
@@ -314,12 +321,13 @@ impl Scheduler {
         let rule = self.effective_rule(&self.pending[index]);
         let slot = &mut self.pending[index];
         slot.retry_at = None;
+        slot.tracker = Some(RateTracker::new(Instant::now(), slot.item.transferred));
         slot.item.state = ItemState::Active {
             started: SystemTime::now(),
         };
         let item = slot.item.clone();
         let id = item.id;
-        let progress = Arc::new(ProgressCell::default());
+        let progress = Arc::new(ProgressCell::new());
         progress.start_at(item.transferred);
 
         let pooled = self
@@ -379,6 +387,7 @@ impl Scheduler {
         };
         let transferred = running.progress.transferred();
         self.pending[index].item.transferred = transferred;
+        self.pending[index].tracker = None;
         if let Some(retarget) = running.progress.take_retarget() {
             self.pending[index].item.local = retarget.local;
             self.pending[index].item.remote = retarget.remote;
@@ -461,6 +470,8 @@ impl Scheduler {
 
     fn complete(&mut self, index: usize, outcome: Outcome) {
         let mut slot = self.pending.remove(index);
+        self.batch_bytes += slot.item.size.unwrap_or(slot.item.transferred);
+        slot.tracker = None;
         slot.item.state = ItemState::Completed {
             outcome,
             finished: SystemTime::now(),
@@ -511,13 +522,22 @@ impl Scheduler {
 
     fn housekeeping(&mut self) {
         let now = Instant::now();
-        // progress of running items
+        // progress of running items: bytes, sizes learned by the workers, speed
         for slot in &mut self.pending {
             if let Some(running) = self.active.get(&slot.item.id) {
                 let transferred = running.progress.transferred();
                 if transferred != slot.item.transferred {
                     slot.item.transferred = transferred;
                     self.changed = true;
+                }
+                if slot.item.size.is_none()
+                    && let Some(size) = running.progress.size()
+                {
+                    slot.item.size = Some(size);
+                    self.changed = true;
+                }
+                if let Some(tracker) = &mut slot.tracker {
+                    tracker.sample(now, transferred);
                 }
             }
         }
@@ -535,6 +555,7 @@ impl Scheduler {
         if idle_now && !self.was_idle {
             self.was_idle = true;
             self.override_rule = None;
+            self.batch_bytes = 0;
             self.persist_dirty = true;
             self.publish();
             let _ = self.events.send(QueueEvent::Idle);
@@ -584,19 +605,65 @@ impl Scheduler {
 
     /// Publishes the snapshot only; a `Changed` event still follows within 100 ms.
     fn publish_snapshot(&mut self) {
-        let view = |item: &QueueItem| QueueItemView {
+        let now = Instant::now();
+        let view = |slot: &Slot| {
+            let remaining = slot
+                .item
+                .size
+                .map(|size| size.saturating_sub(slot.item.transferred));
+            QueueItemView {
+                item: slot.item.clone(),
+                rate: slot.tracker.as_ref().and_then(RateTracker::rate),
+                eta: slot
+                    .tracker
+                    .as_ref()
+                    .zip(remaining)
+                    .and_then(|(tracker, remaining)| tracker.eta(now, remaining)),
+            }
+        };
+        let finished_view = |item: &QueueItem| QueueItemView {
             item: item.clone(),
             rate: None,
             eta: None,
         };
         let snapshot = QueueSnapshot {
-            pending: self.pending.iter().map(|s| view(&s.item)).collect(),
-            completed: self.completed.iter().map(view).collect(),
-            failed: self.failed.iter().map(|s| view(&s.item)).collect(),
+            pending: self.pending.iter().map(view).collect(),
+            completed: self.completed.iter().map(finished_view).collect(),
+            failed: self.failed.iter().map(|s| finished_view(&s.item)).collect(),
             processing: self.processing,
-            totals: Totals::default(),
+            totals: self.totals(now),
         };
         let _ = self.snapshot.send(Arc::new(snapshot));
+    }
+
+    /// Bytes and speed for the whole batch: everything finished since the queue was last idle
+    /// plus what is still queued (items of unknown size count for what they moved so far).
+    fn totals(&self, now: Instant) -> Totals {
+        let (mut done, mut total) = (self.batch_bytes, self.batch_bytes);
+        let (mut rate, mut any_rate) = (0.0, false);
+        let mut eta_ready = false;
+        for slot in &self.pending {
+            let size = slot.item.size.unwrap_or(slot.item.transferred);
+            total += size;
+            done += slot.item.transferred.min(size);
+            if let Some(tracker) = &slot.tracker {
+                if let Some(r) = tracker.rate() {
+                    rate += r;
+                    any_rate = true;
+                }
+                eta_ready |= tracker.eta(now, 0).is_some();
+            }
+        }
+        let rate = any_rate.then_some(rate);
+        let eta = rate
+            .filter(|r| *r > 0.0 && eta_ready)
+            .map(|r| Duration::from_secs_f64(total.saturating_sub(done) as f64 / r));
+        Totals {
+            bytes_done: done,
+            bytes_total: total,
+            rate,
+            eta,
+        }
     }
 
     fn save(&mut self) {

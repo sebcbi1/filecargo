@@ -19,6 +19,8 @@ pub(crate) struct ProgressCell {
     offset: AtomicU64,
     /// Bytes moved by this attempt.
     written: AtomicU64,
+    /// Size of the source once the worker has stat'ed it ([`NO_SIZE`] until then).
+    size: AtomicU64,
     /// Set when the `Rename` rule picked a new name for the target: the item must follow it,
     /// so a retry resumes the renamed file instead of conflicting again.
     retarget: Mutex<Option<Retarget>>,
@@ -30,7 +32,25 @@ pub(crate) struct Retarget {
     pub remote: RemotePath,
 }
 
+/// "Not known yet" for [`ProgressCell::size`].
+pub(crate) const NO_SIZE: u64 = u64::MAX;
+
 impl ProgressCell {
+    pub(crate) fn new() -> Self {
+        Self {
+            size: AtomicU64::new(NO_SIZE),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn set_size(&self, size: u64) {
+        self.size.store(size, Ordering::Relaxed);
+    }
+
+    pub(crate) fn size(&self) -> Option<u64> {
+        Some(self.size.load(Ordering::Relaxed)).filter(|s| *s != NO_SIZE)
+    }
+
     pub(crate) fn start_at(&self, offset: u64) {
         self.offset.store(offset, Ordering::Relaxed);
         self.written.store(0, Ordering::Relaxed);
@@ -180,6 +200,7 @@ async fn run_file(job: &Job) -> Result<JobResult, TransferError> {
     let item = &job.item;
     let (mut target_local, mut target_remote) = (item.local.clone(), item.remote.clone());
     let ends = stat_ends(job, &target_local, &target_remote).await?;
+    job.progress.set_size(ends.source.size);
 
     let mut outcome = Outcome::Transferred;
     let offset = match &ends.target {
@@ -233,6 +254,9 @@ async fn run_file(job: &Job) -> Result<JobResult, TransferError> {
     match item.direction {
         Direction::Upload => upload(job, &target_remote, offset).await?,
         Direction::Download => download(job, &target_local, offset).await?,
+    }
+    if let Some(modified) = ends.source.modified {
+        keep_modification_time(job, &target_local, &target_remote, modified).await;
     }
     Ok(JobResult::Completed(outcome))
 }
@@ -366,6 +390,42 @@ async fn run_dir(job: &Job) -> Result<JobResult, TransferError> {
         }
     };
     Ok(JobResult::Expanded(children(item, entries)))
+}
+
+/// Gives the target the source's modification time, so a later "overwrite if newer" compares
+/// like with like. Failing to do so is logged, never fatal: the data is already there.
+async fn keep_modification_time(
+    job: &Job,
+    target_local: &Path,
+    target_remote: &RemotePath,
+    modified: std::time::SystemTime,
+) {
+    let result = match job.item.direction {
+        Direction::Download => set_local_modified(target_local, modified).await,
+        Direction::Upload if job.fs.capabilities().set_modified => job
+            .fs
+            .set_modified(target_remote, modified)
+            .await
+            .map_err(|e| e.to_string()),
+        Direction::Upload => return,
+    };
+    if let Err(error) = result {
+        tracing::warn!(target: "filecargo::transfer", id = %job.item.id, %error, "could not preserve the modification time");
+    }
+}
+
+async fn set_local_modified(path: &Path, modified: std::time::SystemTime) -> Result<(), String> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        // Windows needs write access to set times.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_modified(modified))
+            .map_err(|e| format!("{}: {e}", path.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]

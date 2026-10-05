@@ -3,6 +3,7 @@
 mod conflict;
 mod error;
 mod model;
+mod progress;
 mod queue;
 mod scheduler;
 pub mod store;

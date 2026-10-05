@@ -14,7 +14,10 @@ use filecargo_transfer::{
     ConflictInfo, Connector, Queue, QueueEvent, QueueLimits, TransferError, TransferId,
 };
 use sha2::{Digest, Sha256};
-use tokio::io::{AsyncRead, AsyncWrite};
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
 
 #[path = "flaky.rs"]
@@ -46,6 +49,7 @@ pub struct CountingFs {
     inner: RootedFs,
     pub stats: Arc<Stats>,
     pub delay: Duration,
+    pub throttle: Option<(usize, Duration)>,
 }
 
 struct InFlight<'a>(&'a Stats);
@@ -62,6 +66,43 @@ impl<'a> InFlight<'a> {
 impl Drop for InFlight<'_> {
     fn drop(&mut self) {
         self.0.in_flight.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// Reads at most `per_tick` bytes, then waits `tick` (virtual time under a paused clock).
+struct ThrottledRead<'a> {
+    inner: &'a mut (dyn AsyncRead + Send + Unpin),
+    per_tick: usize,
+    tick: Duration,
+    sleep: Option<Pin<Box<tokio::time::Sleep>>>,
+}
+
+impl AsyncRead for ThrottledRead<'_> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        if let Some(sleep) = self.sleep.as_mut() {
+            if sleep.as_mut().poll(cx).is_pending() {
+                return Poll::Pending;
+            }
+            self.sleep = None;
+        }
+        let max = buf.remaining().min(self.per_tick);
+        let mut small = ReadBuf::new(buf.initialize_unfilled_to(max));
+        match Pin::new(&mut *self.inner).poll_read(cx, &mut small) {
+            Poll::Ready(Ok(())) => {
+                let n = small.filled().len();
+                buf.advance(n);
+                if n > 0 {
+                    let tick = self.tick;
+                    self.sleep = Some(Box::pin(tokio::time::sleep(tick)));
+                }
+                Poll::Ready(Ok(()))
+            }
+            other => other,
+        }
     }
 }
 
@@ -120,7 +161,18 @@ impl RemoteFs for CountingFs {
     ) -> Result<u64, FsError> {
         let _guard = InFlight::enter(&self.stats);
         tokio::time::sleep(self.delay).await;
-        self.inner.upload(path, offset, source, progress).await
+        match self.throttle {
+            None => self.inner.upload(path, offset, source, progress).await,
+            Some((per_tick, tick)) => {
+                let mut slow = ThrottledRead {
+                    inner: source,
+                    per_tick,
+                    tick,
+                    sleep: None,
+                };
+                self.inner.upload(path, offset, &mut slow, progress).await
+            }
+        }
     }
     async fn close(&self) {
         self.stats.closes.fetch_add(1, Ordering::SeqCst);
@@ -132,6 +184,8 @@ pub struct TestConnector {
     roots: Mutex<HashMap<SiteId, PathBuf>>,
     pub stats: Arc<Stats>,
     pub delay: Mutex<Duration>,
+    /// `(bytes, per)`: uploads read at most this many bytes per interval.
+    pub throttle: Mutex<Option<(usize, Duration)>>,
     pub flaky: Arc<FlakyControl>,
 }
 
@@ -141,6 +195,7 @@ impl TestConnector {
             roots: Mutex::default(),
             stats: Arc::default(),
             delay: Mutex::new(Duration::ZERO),
+            throttle: Mutex::new(None),
             flaky: Arc::default(),
         })
     }
@@ -176,6 +231,7 @@ impl Connector for TestConnector {
             inner,
             stats: self.stats.clone(),
             delay: *self.delay.lock().unwrap(),
+            throttle: *self.throttle.lock().unwrap(),
         });
         Ok(Arc::new(FlakyFs::new(counting, self.flaky.clone())))
     }
@@ -194,6 +250,8 @@ pub struct Harness {
     pub finished_failed: usize,
     /// Every `ConflictAsked` seen so far.
     pub conflicts: Vec<(TransferId, ConflictInfo)>,
+    /// When each `Changed` event was received.
+    pub changed_at: Vec<std::time::Instant>,
 }
 
 impl Harness {
@@ -223,6 +281,7 @@ impl Harness {
             finished_ok: 0,
             finished_failed: 0,
             conflicts: Vec::new(),
+            changed_at: Vec::new(),
         }
     }
 
@@ -263,7 +322,7 @@ impl Harness {
                     QueueEvent::ConflictAsked { id, conflict } => {
                         self.conflicts.push((id, conflict))
                     }
-                    _ => {}
+                    QueueEvent::Changed => self.changed_at.push(std::time::Instant::now()),
                 }
             }
             panic!("the event channel closed before the queue went idle");
@@ -362,4 +421,22 @@ pub fn set_mtime(path: &Path, secs: u64) {
     let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
     file.set_modified(std::time::UNIX_EPOCH + Duration::from_secs(secs))
         .unwrap();
+}
+
+impl TestConnector {
+    /// Uploads made from now on read at most `bytes` per `per`.
+    pub fn set_throttle(&self, bytes: usize, per: Duration) {
+        *self.throttle.lock().unwrap() = Some((bytes, per));
+    }
+}
+
+/// Modification time of a file in seconds since the epoch.
+pub fn mtime(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .unwrap()
+        .modified()
+        .unwrap()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }

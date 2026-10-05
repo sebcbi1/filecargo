@@ -41,7 +41,7 @@ T1 model + persistence ── T2 scheduler + single file ── T3 directories �
 ### Phase 2: Robustness
 - [x] T4: Conflict rules + `Ask` / `resolve` / `apply_to_all` (M)
 - [ ] T5: Resume, automatic retry with back-off, manual retry/remove/cancel, `FlakyFs` (M)
-- [ ] T6: Progress rate/ETA, 10 Hz throttle, mtime preservation (S)
+- [x] T6: Progress rate/ETA, 10 Hz throttle, mtime preservation (S)
 ### Checkpoint B: AC2, AC3, AC6, AC7 green
 ### Phase 3: Durability and real servers
 - [ ] T7: Debounced persistence, `shutdown`, restart restore, corrupt file backup (S)
@@ -105,3 +105,10 @@ _Appended per task during implementation._
 - `tests/support/flaky.rs`: `FlakyFs` (wraps `CountingFs`) with a shared `FlakyControl`: `Fault::FailAfter(n)` (moves n bytes, then `Disconnected`, partial data stays), `Fault::HangAfter(n)`, **broken-after-cancel** (the wrapper is unusable once a transfer future was dropped, like the FTP backend), a log of `(direction, offset)` per transfer call, and `fail_connects`.
 - Tests use `#[tokio::test(start_paused = true)]` for back-off (virtual 2 s + 10 s, measured as 12–13 s of virtual time) with `Harness::idle_for(1 h virtual)`; the cancel test runs in real time. 8 tests: dropped upload / download resume at 4,000,000 / 3,000,000 (SHA-256 equal, calls `[("upload",0),("upload",4000000)]`), 3 failures → `Failed` with the reason → manual retry resumes at 3,000,000, non-retryable fails at once, connect failures retried, back-off timing, cancel + no reuse of the broken connection, retry ordering.
 - Flaky-test fix: the apply-to-all test now queues later items behind `set_processing(false)`; with one slot they could otherwise reach their conflict before the owner's answer (an already-asked conflict cannot be un-asked, only the ones that come later and the ones already waiting).
+
+### T6 Progress and timestamps (done)  → Checkpoint B reached (AC1–3, 6, 7)
+- `progress.rs::RateTracker`: EMA with τ = 5 s over samples ≥ 50 ms apart; starts counting at the resume offset (resumed bytes are not "speed"); ETA hidden until 1 s of data and at zero speed. The scheduler samples running items every housekeeping pass; workers publish the source size through `ProgressCell::size`, so items enqueued without a size get one.
+- `QueueItemView.rate/eta` for running items; `Totals` = batch totals (finished since the queue was last idle + what is queued; unknown sizes count as what they moved), summed rate, ETA once any running item has a second of data. The batch resets when the queue goes idle.
+- `Changed` is emitted at most once per 100 ms: measured with 1,000 small files (count ≤ 10 × elapsed + 2).
+- Timestamps: after a successful download the local mtime is set to the remote one (`spawn_blocking`, write handle for Windows); after an upload `set_modified` is called when the backend advertises it; failures are logged, never fatal. Verified ±1 s both ways.
+- The rate test runs in **real time** (throttled uploads, 655,360 B/s): a paused tokio clock runs ahead of file I/O in the blocking pool, which made the first, paused-time version meaningless. 3 integration tests + 5 `RateTracker` unit tests.
