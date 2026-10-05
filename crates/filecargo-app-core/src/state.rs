@@ -109,7 +109,11 @@ pub enum TerminalState {
     NotAvailable,
     Closed,
     Open(TerminalView),
-    Exited(Option<u32>),
+    /// The shell ended; the screen stays readable through `view`. The UI offers "reopen".
+    Exited {
+        code: Option<u32>,
+        view: TerminalView,
+    },
 }
 
 impl std::fmt::Debug for TerminalState {
@@ -118,7 +122,7 @@ impl std::fmt::Debug for TerminalState {
             Self::NotAvailable => f.write_str("NotAvailable"),
             Self::Closed => f.write_str("Closed"),
             Self::Open(_) => f.write_str("Open(..)"),
-            Self::Exited(code) => write!(f, "Exited({code:?})"),
+            Self::Exited { code, .. } => write!(f, "Exited({code:?})"),
         }
     }
 }

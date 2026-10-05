@@ -228,6 +228,7 @@ impl Core {
         self.connect_epoch += 1; // a connect still in flight is superseded
         self.after_connect = None;
         self.remote_seq += 1;
+        self.close_terminal();
         self.shell = None;
         if let Some(live) = self.live.take() {
             let fs = live.fs;

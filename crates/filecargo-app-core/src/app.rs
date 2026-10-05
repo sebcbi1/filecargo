@@ -24,7 +24,9 @@ use crate::state::{
     AppState, ConnectStep, Level, Notice, NoticeId, Pane, PaneId, Prompt, PromptAnswer, PromptId,
     PromptKind, SessionState, StartError, TerminalState,
 };
+use crate::terminal::Opened;
 use crate::transfers::{RefreshSchedule, Shared};
+use filecargo_terminal::{TermStatus, TerminalHandle};
 use filecargo_transfer::{Direction, Queue, QueueEvent};
 
 /// Published snapshots are coalesced to at most this many per second.
@@ -141,6 +143,8 @@ impl App {
             ctx,
             live: None,
             shell: None,
+            terminal: None,
+            quitting: false,
             connect_epoch: 0,
             after_connect: None,
             lost_site: None,
@@ -198,6 +202,11 @@ pub(crate) enum Msg {
     RemoteListed(RemoteListing),
     OpDone(OpDone),
     Queue(QueueEvent),
+    TerminalOpened(Opened),
+    TerminalEnded {
+        epoch: u64,
+        status: TermStatus,
+    },
     /// The connect task found out how far it got.
     ConnectStep {
         epoch: u64,
@@ -282,6 +291,10 @@ pub(crate) struct Core {
     /// The connected session, if any.
     pub(crate) live: Option<Live>,
     pub(crate) shell: Option<ShellOpener>,
+    /// The open shell, if any.
+    pub(crate) terminal: Option<TerminalHandle>,
+    /// Set by a confirmed `Quit`: the actor winds down after the current message.
+    pub(crate) quitting: bool,
     /// Bumps on every connect and disconnect; results of older ones are discarded.
     pub(crate) connect_epoch: u64,
     /// Runs once the connection in progress succeeds (an automatic reconnect replays the
@@ -336,6 +349,8 @@ impl Core {
                     Some(Msg::RemoteListed(listing)) => self.on_remote_listed(listing),
                     Some(Msg::OpDone(done)) => self.on_op_done(done),
                     Some(Msg::Queue(event)) => self.on_queue_event(event),
+                    Some(Msg::TerminalOpened(opened)) => self.on_terminal_opened(opened),
+                    Some(Msg::TerminalEnded { epoch, status }) => self.on_terminal_ended(epoch, status),
                     Some(Msg::Connected(connected)) => self.on_connected(connected),
                     Some(Msg::ConnectStep { epoch, step }) => self.on_connect_step(epoch, step),
                     Some(Msg::Shutdown(ack)) => {
@@ -349,6 +364,11 @@ impl Core {
                 () = tokio::time::sleep_until(wake) => {}
             }
             self.run_due_refreshes();
+            if self.quitting {
+                self.shutdown().await;
+                self.publish_now();
+                return;
+            }
             if self.dirty && self.last_publish.elapsed() >= interval {
                 self.publish_now();
             }
@@ -367,11 +387,40 @@ impl Core {
         self.last_publish = Instant::now();
     }
 
+    /// Persists the queue and closes the shell and the session.
     async fn shutdown(&mut self) {
         if let Some(queue) = self.queue.take() {
             queue.shutdown().await;
         }
-        // sessions and the queue are closed here as they are added
+        self.close_terminal();
+        if let Some(live) = self.live.take() {
+            live.fs.close().await;
+        }
+        self.shell = None;
+        self.state.session = SessionState::Disconnected;
+        self.state.remote = None;
+        self.state.terminal = TerminalState::NotAvailable;
+        self.changed();
+    }
+
+    /// `Quit`: asks first when transfers are running (they would be interrupted; the queue is
+    /// saved either way).
+    fn request_quit(&mut self) {
+        let active = self
+            .state
+            .queue
+            .pending
+            .iter()
+            .filter(|v| matches!(v.item.state, filecargo_transfer::ItemState::Active { .. }))
+            .count();
+        if active > 0 {
+            let id = self.enqueue_prompt(PromptKind::ConfirmQuit {
+                active_transfers: active,
+            });
+            self.actions.insert(id, PromptAction::Quit);
+        } else {
+            self.quitting = true;
+        }
     }
 
     pub(crate) fn notice(&mut self, level: Level, text: String) {
@@ -442,6 +491,12 @@ impl Core {
             | Command::QueueRemove(_)
             | Command::QueueClearCompleted
             | Command::QueueSetProcessing(_)) => self.queue_command(command),
+            command @ (Command::TerminalOpen { .. }
+            | Command::TerminalInput(_)
+            | Command::TerminalResize { .. }
+            | Command::TerminalScroll(_)
+            | Command::TerminalClose) => self.terminal_command(command),
+            Command::Quit => self.request_quit(),
             Command::Connect(site) => self.connect(site, None),
             Command::Disconnect => self.disconnect(),
             Command::SetSort {
@@ -472,9 +527,6 @@ impl Core {
             Command::DismissNotice(id) => {
                 self.state.notices.retain(|n| n.id != id);
                 self.changed();
-            }
-            other => {
-                tracing::warn!(target: "filecargo::app", command = ?other, "command not handled yet");
             }
         }
     }

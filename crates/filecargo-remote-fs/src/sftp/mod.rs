@@ -13,7 +13,7 @@ use filecargo_config::Site;
 
 pub use auth::authenticate;
 pub use fs::SftpFs;
-pub use shell::{ShellChannel, ShellInput, ShellOpener, ShellOutput};
+pub use shell::{ShellBackend, ShellChannel, ShellInput, ShellOpener, ShellOutput};
 pub use transport::{SshConnection, connect_ssh};
 
 use crate::{ConnectContext, ConnectError};

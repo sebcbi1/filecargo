@@ -24,5 +24,5 @@ pub use prompt::{
     CertificateProblem, CertificatePrompt, CredentialAnswer, CredentialPrompt, HostKeyPrompt,
     Prompter, TrustDecision,
 };
-pub use sftp::{ShellChannel, ShellInput, ShellOpener, ShellOutput};
+pub use sftp::{ShellBackend, ShellChannel, ShellInput, ShellOpener, ShellOutput};
 pub use trust::SessionTrust;

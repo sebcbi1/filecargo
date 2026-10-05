@@ -10,7 +10,6 @@ use tokio::sync::{mpsc, oneshot};
 use crate::app::{Core, Msg};
 use crate::state::{PromptAnswer, PromptId, PromptKind};
 
-/// A request from a background task: show `kind`, send the answer back on `reply`.
 /// What a confirmed prompt does, for prompts the app raises itself (not for background tasks).
 pub(crate) enum PromptAction {
     Delete {
@@ -19,8 +18,10 @@ pub(crate) enum PromptAction {
     Conflict {
         transfer: filecargo_transfer::TransferId,
     },
+    Quit,
 }
 
+/// A request from a background task: show `kind`, send the answer back on `reply`.
 pub(crate) struct PromptRequest {
     pub kind: PromptKind,
     pub reply: oneshot::Sender<PromptAnswer>,
@@ -88,6 +89,8 @@ impl Core {
                     self.run_delete(names)
                 }
                 (PromptAction::Conflict { transfer }, _) => self.answer_conflict(transfer, &answer),
+                (PromptAction::Quit, PromptAnswer::Confirm(true)) => self.quitting = true,
+                (PromptAction::Quit, _) => {}
                 (PromptAction::Delete { .. }, _) => {}
             }
         }

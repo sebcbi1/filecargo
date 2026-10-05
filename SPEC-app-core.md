@@ -1,6 +1,6 @@
 # Spec: app-core
 
-> Module id: `app-core` · Crate: `crates/filecargo-app-core` · Depends on: `config`, `remote-fs`, `transfer`, `terminal` · Status: **draft, awaiting review**
+> Module id: `app-core` · Crate: `crates/filecargo-app-core` · Depends on: `config`, `remote-fs`, `transfer`, `terminal` · Status: **implemented, awaiting final review**
 > Project-wide rules: [SPEC.md](SPEC.md). Plan: [tasks/app-core/plan.md](tasks/app-core/plan.md).
 
 ## Objective
@@ -70,7 +70,7 @@ pub struct AppState {
     pub local: Pane<PathBuf>,
     pub remote: Option<Pane<RemotePath>>,        // Some while connected
     pub queue: Arc<QueueSnapshot>,
-    pub terminal: TerminalState,                 // NotAvailable | Closed | Open(TerminalView) | Exited(code)
+    pub terminal: TerminalState,                 // NotAvailable | Closed | Open(TerminalView) | Exited { code, view }
     pub prompt: Option<Prompt>,                  // the one prompt to show now (FIFO behind it)
     pub notices: Vec<Notice>,                    // transient toasts: id, level, text (UI dismisses)
     pub log_generation: u64,                     // bumps when new log lines arrive

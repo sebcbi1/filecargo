@@ -1,6 +1,6 @@
 # Implementation Plan: `app-core` module
 
-> Spec: [SPEC-app-core.md](../../SPEC-app-core.md) · Tasks: [todo.md](todo.md) · Status: **awaiting review** · 2026-10-05
+> Spec: [SPEC-app-core.md](../../SPEC-app-core.md) · Tasks: [todo.md](todo.md) · Status: **complete; awaiting final human review** · 2026-10-05
 > Starts after `transfer` Checkpoint B and `terminal` complete (their public APIs are stable).
 
 ## Overview
@@ -48,8 +48,8 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 ### Checkpoint B: AC3, AC4, AC5, AC8, AC9 green
 ### Phase 3: Transfers and terminal
 - [x] T8: Queue wiring: `Connector` adapter over `SessionFactory`, `Upload`/`Download`, conflict prompts, queue commands, pane refresh debounce, snapshot rate (M)
-- [ ] T9: Terminal commands, `TerminalState`, `Quit` + `ConfirmQuit` + shutdown timeout, re-exports module (S)
-### Checkpoint C: all 11 AC green, coverage ≥ 80 %, human review
+- [x] T9: Terminal commands, `TerminalState`, `Quit` + `ConfirmQuit` + shutdown timeout, re-exports module (S)
+### Checkpoint C: all 11 AC green, coverage ≥ 80 %, human review — AC and coverage done; human review pending
 
 ## AC Traceability
 | AC | Task | AC | Task | AC | Task |
@@ -122,3 +122,31 @@ _Appended per task during implementation._
 - **Pane refresh debounce**: `RefreshSchedule` (due time = max(now, last refresh + 1 s)) per pane; a finished item refreshes the pane whose directory it landed in (remote for uploads into the shown directory, local for downloads), and `Idle` refreshes both so the last files of a batch always show up; the actor's wake-up includes the next due time.
 - Queue commands (`QueueRetry`, `QueueRetryFailed`, `QueueRemove`, `QueueClearCompleted`, `QueueSetProcessing`) are thin calls.
 - AC11 verified with a 1,000-file upload: ≤ 30 snapshots/s, and whenever the local pane's `generation` is unchanged between snapshots its entries are the **same `Arc`** (pointer equality). 8 tests (+ `Entry` re-exported). The test harness timeout was raised to 10 s after one run, taken while a compile was hogging the machine, missed a 5 s wait.
+
+### T9 Terminal, quit, re-exports (done) → Checkpoint C reached (human review pending)
+- **Terminal** (`terminal.rs`): `TerminalOpen` opens `xterm-256color` through the session's `ShellOpener` (idempotent while open; again after exit), spawns the `terminal` emulator (5,000 lines of scrollback) and watches it with the new `TerminalHandle::wait_ended()`; `TerminalInput(bytes)` (new `send_raw`), `Resize`, `Scroll`, `Close` act on it; the shell goes away with the session (`drop_session` closes it); a failed open is a notice and the tab stays `Closed`. `NotAvailable` for FTP sessions. **Deviation:** `TerminalState::Exited` is `Exited { code, view }` (spec: `Exited(code)`) so the screen stays readable after the shell ends, as the terminal spec requires.
+- **remote-fs API addition (cross-module, additive):** `ShellBackend` trait + `ShellOpener::from_backend(Arc<dyn ShellBackend>)`; the SSH implementation became a private `SshShell`. It lets app-core tests (and embedders) provide shells without SSH.
+- **Quit**: `Quit` asks `ConfirmQuit { active_transfers }` only when items are in the `Active` state (queued items are saved anyway); a confirmed quit sets `quitting`, and the actor performs `Queue::shutdown` (persists `queue.json`), closes the shell and the session, publishes a final snapshot (`Disconnected`, no remote pane) and **returns, which drops the snapshot sender: front-ends see `state().changed()` fail and exit**. `AppHandle::shutdown(timeout)` afterwards is a plain runtime shutdown and stays idempotent.
+- `prelude.rs` is the single list of re-exports (own types + the lower crates' types the UIs render or build); `lib.rs` is `pub mod prelude; pub use prelude::*;`.
+- 8 new tests: terminal (availability by protocol, draw/input/resize/scroll, exit + reopen, disconnect closes it, open failure), quit (idle quit, confirm/decline with a still-running transfer and a persisted `queue.json`, restart restores the queue). The quit tests' waits are 10 s: the machine was loaded by Docker healthchecks and failed a 3 s wait once.
+- Coverage (`cargo llvm-cov -p filecargo-app-core`): **91.3 % lines** (lowest: `state.rs` 57 %, i.e. `Debug` impls).
+
+### Acceptance criteria → tests
+| AC | Covered by |
+|---|---|
+| 1, 2 startup, corrupt config + reset | `tests/startup.rs` |
+| 3 connect flow, second site closes the first | `tests/session.rs` |
+| 4 credential prompt, cancel | `tests/session.rs`, `tests/prompts.rs` |
+| 5 navigation race | `tests/panes.rs` (20,000-entry listing superseded) |
+| 6 upload / download of a mixed selection + refresh | `tests/transfers.rs` |
+| 7 conflict prompt reaches the queue | `tests/transfers.rs` |
+| 8 delete with confirmation | `tests/remote_ops.rs` |
+| 9 sorting and hiding | `sort::tests`, `tests/panes.rs` |
+| 10 quit | `tests/quit.rs` |
+| 11 snapshot rate, shared entries | `tests/startup.rs` (burst), `tests/transfers.rs` (1,000 files) |
+
+### Notes for the front-end authors
+- Drive everything through `AppHandle::send` and render `AppHandle::state()`; run your loop on `app.runtime()` (TUI) or await the `watch::Receiver` on gpui's executor. A closed state channel means the app has quit.
+- After answering a prompt, the snapshot can lag one publish: wait for a prompt with a different id.
+- `Pane.entries` excludes `..`; `Pane.generation` bumps on every listing and sort (reset your cursor then).
+- `Command::Answer` only works on the prompt that is showing.

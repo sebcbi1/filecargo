@@ -30,9 +30,21 @@ pub struct ShellChannel {
     pub output: mpsc::UnboundedReceiver<ShellOutput>,
 }
 
-/// Opens shells on one SSH connection. Cheap to clone.
+/// Something that can open an interactive shell. The SFTP session provides one over its SSH
+/// connection; embedders and tests can provide their own.
+#[async_trait::async_trait]
+pub trait ShellBackend: Send + Sync {
+    async fn open(&self, term: &str, cols: u16, rows: u16) -> Result<ShellChannel, FsError>;
+}
+
+/// Opens shells for a session. Cheap to clone.
 #[derive(Clone)]
 pub struct ShellOpener {
+    backend: Arc<dyn ShellBackend>,
+}
+
+/// A shell on the SFTP session's own SSH connection.
+struct SshShell {
     conn: Arc<SshConnection>,
 }
 
@@ -48,11 +60,26 @@ fn disconnected(e: impl std::fmt::Display) -> FsError {
 
 impl ShellOpener {
     pub(crate) fn new(conn: Arc<SshConnection>) -> Self {
-        Self { conn }
+        Self {
+            backend: Arc::new(SshShell { conn }),
+        }
     }
 
-    /// Opens a PTY and a shell on the **same** SSH connection as the SFTP session.
+    /// A shell opener backed by something other than a real SSH connection (tests, embedders).
+    pub fn from_backend(backend: Arc<dyn ShellBackend>) -> Self {
+        Self { backend }
+    }
+
+    /// Opens a PTY and a shell, on the **same** SSH connection as the SFTP session for real
+    /// sessions.
     pub async fn open(&self, term: &str, cols: u16, rows: u16) -> Result<ShellChannel, FsError> {
+        self.backend.open(term, cols, rows).await
+    }
+}
+
+#[async_trait::async_trait]
+impl ShellBackend for SshShell {
+    async fn open(&self, term: &str, cols: u16, rows: u16) -> Result<ShellChannel, FsError> {
         let mut channel = self
             .conn
             .handle

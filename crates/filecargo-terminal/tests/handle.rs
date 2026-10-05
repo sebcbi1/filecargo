@@ -303,3 +303,32 @@ async fn heavy_output_is_fed_in_pieces_and_lands_completely() {
     remote.say(&big);
     settle(&term, |t| t.with_screen(|s| s.contents()).contains("END")).await;
 }
+
+#[tokio::test]
+async fn wait_ended_returns_when_the_shell_exits_or_the_channel_closes() {
+    let (term, remote) = open(SIZE);
+    let waiter = tokio::spawn({
+        let term = term.clone();
+        async move { term.wait_ended().await }
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(!waiter.is_finished(), "a running shell has not ended");
+    remote.output.send(ShellOutput::Exit(Some(7))).unwrap();
+    assert_eq!(waiter.await.unwrap(), TermStatus::Exited(Some(7)));
+    assert_eq!(
+        term.wait_ended().await,
+        TermStatus::Exited(Some(7)),
+        "already ended: returns at once"
+    );
+
+    let (term, remote) = open(SIZE);
+    drop(remote);
+    assert_eq!(term.wait_ended().await, TermStatus::Closed);
+}
+
+#[tokio::test]
+async fn raw_bytes_are_sent_as_they_are() {
+    let (term, mut remote) = open(SIZE);
+    term.send_raw(vec![0x1b, b'[', b'A', 0xff]);
+    assert_eq!(bytes(&remote.received()), [0x1b, b'[', b'A', 0xff]);
+}

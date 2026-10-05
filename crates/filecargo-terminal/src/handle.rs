@@ -54,6 +54,8 @@ struct Shared {
     parser: Mutex<vt100::Parser<TermCallbacks>>,
     generation: AtomicU64,
     status: Mutex<TermStatus>,
+    /// Carries the status so `wait_ended` can await it.
+    status_watch: watch::Sender<TermStatus>,
 }
 
 impl Shared {
@@ -68,6 +70,7 @@ impl Shared {
 
     fn set_status(&self, status: TermStatus) {
         *self.status.lock().unwrap_or_else(|e| e.into_inner()) = status;
+        self.status_watch.send_replace(status);
         self.bump();
     }
 
@@ -96,6 +99,7 @@ pub fn spawn(channel: ShellChannel, size: TermSize, scrollback: usize) -> Termin
         )),
         generation: AtomicU64::new(0),
         status: Mutex::new(TermStatus::Running),
+        status_watch: watch::channel(TermStatus::Running).0,
     });
     let (resize_tx, resize_rx) = watch::channel(size);
     let ShellChannel { input, output } = channel;
@@ -206,6 +210,25 @@ impl TerminalHandle {
     /// Encoded with the screen's current modes (application cursor keys, ...).
     pub fn send_key(&self, key: Key, mods: Mods) {
         self.send_bytes(encode(key, mods, self.modes()));
+    }
+
+    /// Raw bytes, for front-ends that encode keys themselves.
+    pub fn send_raw(&self, bytes: Vec<u8>) {
+        self.send_bytes(bytes);
+    }
+
+    /// Waits until the shell has ended and returns how.
+    pub async fn wait_ended(&self) -> TermStatus {
+        let mut status = self.shared.status_watch.subscribe();
+        loop {
+            let current = *status.borrow_and_update();
+            if current != TermStatus::Running {
+                return current;
+            }
+            if status.changed().await.is_err() {
+                return self.status();
+            }
+        }
     }
 
     /// Typed text (UTF-8), sent as is.
