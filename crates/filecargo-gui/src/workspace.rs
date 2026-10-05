@@ -9,22 +9,31 @@ use gpui_kit::{
 };
 
 use crate::model::AppModel;
+use crate::pane::FilePaneView;
+use filecargo_app_core::prelude::PaneId;
+use gpui_kit::AppContext as _;
 
 gpui_kit::actions!(filecargo, [Quit]);
 
 pub struct Workspace {
     pub model: Entity<AppModel>,
+    pub local: Entity<FilePaneView>,
+    pub remote: Entity<FilePaneView>,
     /// How many times the view drew (tests use it to see that a snapshot re-rendered).
     pub renders: usize,
     _observe: Subscription,
 }
 
 impl Workspace {
-    pub fn new(model: Entity<AppModel>, cx: &mut Context<Self>) -> Self {
+    pub fn new(model: Entity<AppModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let local = cx.new(|cx| FilePaneView::new(PaneId::Local, model.clone(), window, cx));
+        let remote = cx.new(|cx| FilePaneView::new(PaneId::Remote, model.clone(), window, cx));
         // every new snapshot re-renders the workspace
         let _observe = cx.observe(&model, |_, _, cx| cx.notify());
         Self {
             model,
+            local,
+            remote,
             renders: 0,
             _observe,
         }
@@ -51,8 +60,8 @@ impl Render for Workspace {
         self.renders += 1;
         let sites = self.model.read(cx).state.servers.sites().len();
         let tree = Self::area(&format!("Servers ({sites})"), cx);
-        let local = Self::area("Local", cx);
-        let remote = Self::area("Remote", cx);
+        let local = self.local.clone();
+        let remote = self.remote.clone();
         let bottom = Self::area("Queue", cx);
         let columns = h_resizable("columns")
             .child(
@@ -88,4 +97,17 @@ impl Render for Workspace {
                     ),
             )
     }
+}
+
+/// The key bindings of the whole application.
+pub fn bind_keys(cx: &mut gpui_kit::App) {
+    use crate::pane::{OpenRow, ParentDir, RefreshPane, SelectAllRows};
+    use gpui_kit::KeyBinding;
+    cx.bind_keys([
+        KeyBinding::new("secondary-q", Quit, None),
+        KeyBinding::new("enter", OpenRow, Some("FilePane")),
+        KeyBinding::new("backspace", ParentDir, Some("FilePane")),
+        KeyBinding::new("secondary-a", SelectAllRows, Some("FilePane")),
+        KeyBinding::new("secondary-r", RefreshPane, Some("FilePane")),
+    ]);
 }

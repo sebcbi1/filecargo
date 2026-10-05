@@ -55,7 +55,7 @@ pub fn open_with(cx: &mut TestAppContext, options: impl FnOnce(&mut StartOptions
                 ..Default::default()
             },
             cx,
-            |_, cx| cx.new(|cx| Workspace::new(model_for_view, cx)),
+            |window, cx| cx.new(|cx| Workspace::new(model_for_view, window, cx)),
         )
         .unwrap();
         (window.downcast::<Root>().unwrap(), workspace, model)

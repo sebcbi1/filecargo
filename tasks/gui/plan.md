@@ -28,8 +28,8 @@ through gpui-kit, and must never be added directly.
 
 ## Task List
 ### Phase 1: Platform first
-- [ ] T1: Crate + bin, `App::start`, gpui-kit bootstrap (`with_assets`, `init`, `open_window` + Root), `AppModel` watch bridge, empty resizable layout, theme sync, quit; CI `gui` job on 3 OSes (M)
-- [ ] T2: File panes: `DataTable` delegate (columns, sort → `SetSort`, multi-select), local navigation (double-click, Enter, Backspace, path input), pane context menu (M)
+- [x] T1: Crate + bin, `App::start`, gpui-kit bootstrap (`with_assets`, `init`, `open_window` + Root), `AppModel` watch bridge, empty resizable layout, theme sync, quit; CI `gui` job on 3 OSes (M)
+- [x] T2: File panes: `DataTable` delegate (columns, sort → `SetSort`, multi-select), local navigation (double-click, Enter, Backspace, path input), pane context menu (M)
 ### Checkpoint A: the binary browses the local disk; CI gui job green on ubuntu/macos/windows
 ### Phase 2: Sessions and editing
 - [ ] T3: Server tree view, connect/disconnect, remote pane, toolbar with session status (M)
@@ -71,3 +71,12 @@ _Appended per task during implementation._
 - `Workspace`: toolbar strip, `h_resizable` (tree 220 px, 160–480) with three areas, `v_resizable` body / bottom panel (220 px), all placeholders for now; `renders` counter for tests.
 - CI: new `gui` job (ubuntu with the apt libs / macos / windows: clippy, build, test); the `check` job now excludes `filecargo-gui`; `actionlint` clean, **not run on GitHub**. `shell.nix` for NixOS.
 - Tests (`tests/window.rs`, harness in `tests/support/mod.rs`: real app-core on a temp dir, gpui test window with `Root`): window opens, a new snapshot re-renders (AC1 i, ii), theme switch re-renders (AC5).
+
+### T2 File panes (done)
+- `pane.rs`: `FilePaneView` (path bar `Input`, `DataTable`, error line, "Not connected" hint for the remote pane) over a `PaneDelegate`. Columns Name / Size / Modified / Permissions; a header click on the first three calls `perform_sort` → `Command::SetSort` (the table never sorts by itself: the new order arrives with the snapshot); a `..` row is added when the directory has a parent.
+- **Multi-select in the delegate** (`BTreeSet<String>` of names, drawn in `render_tr` with the table's active-row colour): plain mouse-down selects only that row, `secondary` toggles, `shift` selects the range from the anchor (shift+secondary extends); `secondary-a` selects all; keyboard Up/Down (handled by the table) select the row they land on — the `SelectRow` event that follows a mouse press is ignored via a flag. **Not done:** `Shift+Arrow` range extension (the table owns the arrow keys; revisit if the human review wants it).
+- Selection rule (AC3 of the TUI, same here): same path + new generation → names that still exist stay selected, another path → cleared.
+- Navigation: double-click a directory → `Navigate`, the `..` row → `Up`; `Enter` / `Backspace` / `secondary-r` through actions in the `FilePane` key context (`workspace::bind_keys`); path bar `Enter` → `Navigate`. Files are not transferred yet (T6). Context menu has *Refresh* only for now; the other entries arrive with the dialogs (T4/T5) and transfers (T6).
+- `format.rs`: size / UTC time / `drwxr-xr-x` helpers (a copy of the TUI's, since front-ends share only app-core).
+- Things learned: `TableState::refresh()` resets user-resized column widths, so rows are replaced through `delegate_mut()` + `notify`; `refresh()` is only used when the sort indicator changes. Real double clicks work headless through `window.double_click(("row", n), cx)`.
+- Tests (`tests/panes.rs`, 6): listing with parent row, multi-select (plain / secondary / shift / `..`), double-click directory and `..` (AC1 iv), selection across refresh and navigation, header sort → app (AC1 v for the multi-select part), remote hint.

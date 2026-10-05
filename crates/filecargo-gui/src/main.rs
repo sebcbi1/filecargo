@@ -3,11 +3,9 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use filecargo_app_core::prelude::*;
 use filecargo_gui::model::AppModel;
-use filecargo_gui::workspace::{Quit, Workspace};
+use filecargo_gui::workspace::{Quit, Workspace, bind_keys};
 use gpui_kit::component::Theme;
-use gpui_kit::{
-    AppContext as _, Bounds, KeyBinding, TitlebarOptions, WindowBounds, WindowOptions, px, size,
-};
+use gpui_kit::{AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size};
 
 fn main() -> Result<()> {
     let handle =
@@ -19,7 +17,7 @@ fn main() -> Result<()> {
             let app = for_ui;
             gpui_kit::init(cx);
             Theme::sync_system_appearance(None, cx);
-            cx.bind_keys([KeyBinding::new("secondary-q", Quit, None)]);
+            bind_keys(cx);
             let quitting = app.clone();
             cx.on_action(move |_: &Quit, _cx| {
                 // the app may ask for a confirmation first: the window closes when it has quit
@@ -39,9 +37,9 @@ fn main() -> Result<()> {
                 app_id: Some("filecargo".into()),
                 ..Default::default()
             };
-            if let Err(error) =
-                gpui_kit::open_window(options, cx, |_, cx| cx.new(|cx| Workspace::new(model, cx)))
-            {
+            if let Err(error) = gpui_kit::open_window(options, cx, |window, cx| {
+                cx.new(|cx| Workspace::new(model, window, cx))
+            }) {
                 eprintln!("filecargo: cannot open the window: {error}");
                 cx.quit();
             }
