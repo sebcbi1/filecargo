@@ -44,7 +44,7 @@ T1 model + persistence ── T2 scheduler + single file ── T3 directories �
 - [x] T6: Progress rate/ETA, 10 Hz throttle, mtime preservation (S)
 ### Checkpoint B: AC2, AC3, AC6, AC7 green
 ### Phase 3: Durability and real servers
-- [ ] T7: Debounced persistence, `shutdown`, restart restore, corrupt file backup (S)
+- [x] T7: Debounced persistence, `shutdown`, restart restore, corrupt file backup (S)
 - [ ] T8: Integration round trip vs docker SFTP and FTP, `max_concurrent = 4` (S)
 ### Checkpoint C: module complete (all 8 AC), coverage ≥ 80 %, human review
 
@@ -112,3 +112,7 @@ _Appended per task during implementation._
 - `Changed` is emitted at most once per 100 ms: measured with 1,000 small files (count ≤ 10 × elapsed + 2).
 - Timestamps: after a successful download the local mtime is set to the remote one (`spawn_blocking`, write handle for Windows); after an upload `set_modified` is called when the backend advertises it; failures are logged, never fatal. Verified ±1 s both ways.
 - The rate test runs in **real time** (throttled uploads, 655,360 B/s): a paused tokio clock runs ahead of file I/O in the blocking pool, which made the first, paused-time version meaningless. 3 integration tests + 5 `RateTracker` unit tests.
+
+### T7 Persistence lifecycle (done)
+- The scheduler loads `queue.json` in `Queue::start`, saves at most once a second after a persisted-state change, and writes a final copy in `shutdown` (running jobs aborted, their items saved as `Pending` with `transferred` taken from the progress cell). The **initial snapshot is published synchronously in `start`**, so a restored queue is visible immediately (found by the restart test).
+- Verified: pending + hung-mid-file + failed items survive a restart; the partial one resumes at its offset (the first call of the new run is `("upload", 2_000_000)`), SHA-256 equal, outcome `Resumed`; ids keep increasing and completed items are not restored; 50 enqueues do not produce 50 writes yet reach the file within ~1 s; a corrupt `queue.json` is renamed to `.bak-<secs>`, the queue starts empty and a `WARN` is logged (captured through a tracing subscriber). 4 tests; `Harness::restart`.

@@ -440,3 +440,42 @@ pub fn mtime(path: &Path) -> u64 {
         .unwrap()
         .as_secs()
 }
+
+impl Harness {
+    /// A new queue over the same data directory and server (what a restart looks like).
+    pub async fn restart(self, max_concurrent: u8) -> Harness {
+        let Harness {
+            queue,
+            connector,
+            local,
+            server,
+            site,
+            data,
+            ..
+        } = self;
+        queue.shutdown().await;
+        let (queue, events) = Queue::start(
+            connector.clone(),
+            data.path().join("queue.json"),
+            QueueLimits {
+                max_concurrent,
+                ..QueueLimits::default()
+            },
+        )
+        .await
+        .unwrap();
+        Harness {
+            queue,
+            events,
+            connector,
+            local,
+            server,
+            site,
+            data,
+            finished_ok: 0,
+            finished_failed: 0,
+            conflicts: Vec::new(),
+            changed_at: Vec::new(),
+        }
+    }
+}

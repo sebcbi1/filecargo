@@ -50,7 +50,10 @@ pub(crate) struct Init {
 }
 
 pub(crate) fn spawn(init: Init) {
-    tokio::spawn(Scheduler::new(init).run());
+    let mut scheduler = Scheduler::new(init);
+    // the restored queue is visible as soon as `Queue::start` returns
+    scheduler.publish_snapshot();
+    tokio::spawn(scheduler.run());
 }
 
 /// A queue entry plus what only the scheduler knows about it.
