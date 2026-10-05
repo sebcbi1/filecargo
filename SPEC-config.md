@@ -1,6 +1,6 @@
 # Spec: config
 
-> Module id: `config` · Crate: `crates/filecargo-config` · Depends on: — · Status: **approved** (2026-10-05)
+> Module id: `config` · Crate: `crates/filecargo-config` · Depends on: — · Status: **implemented** (2026-10-05), all 9 acceptance criteria verified; see tasks/plan.md for deviations
 > Project-wide sections (stack, commands, style, testing, boundaries) live in [SPEC.md](SPEC.md).
 
 ## Objective

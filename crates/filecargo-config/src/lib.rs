@@ -11,6 +11,9 @@ mod store;
 mod tree;
 
 pub use error::{ConfigError, ImportError, ValidationError};
+pub use import::{
+    ImportOptions, ImportReport, PasswordNotImported, SkippedSite, default_filezilla_path,
+};
 pub use model::{Auth, Folder, FolderId, FtpMode, NodeId, Protocol, Site, SiteId};
 pub use paths::Paths;
 pub use secrets::{

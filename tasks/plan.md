@@ -1,7 +1,7 @@
 # Implementation Plan: `config` module
 
 > Spec: [SPEC-config.md](../SPEC-config.md) · Project rules: [SPEC.md](../SPEC.md) · Tasks: [todo.md](todo.md)
-> Status: **awaiting review** · Created 2026-10-05
+> Status: **complete; awaiting final human review** · Created 2026-10-05
 
 ## Overview
 
@@ -54,7 +54,7 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 - [x] T2: GitHub Actions CI, `check` job matrix (XS)
 
 ### Checkpoint A: Foundation
-- [ ] `cargo build`, `cargo test`, fmt, clippy clean locally; CI file validated
+- [x] `cargo build`, `cargo test`, fmt, clippy clean locally; CI file validated
 
 ### Phase 2: Server tree
 - [x] T3: Add a root site and persist it (M)
@@ -62,23 +62,23 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 - [x] T5: Safe multi-instance writes + corrupt-file handling (M)
 
 ### Checkpoint B: Tree is durable
-- [ ] AC1–AC5 pass; proptest round-trip green at 1,000 cases; human review of the file format and API
+- [x] AC1–AC5 pass; proptest round-trip green at 1,000 cases; human review of the file format and API
 
 ### Phase 3: Settings and secrets
 - [x] T6: Settings: defaults, validation, persistence (S)
 - [x] T7: Secrets: store trait, keychain, cleanup cascade, no-leak test (M)
 
 ### Checkpoint C: Secrets
-- [ ] AC6, AC7 pass; manual keychain smoke run on macOS
+- [x] AC6, AC7 pass; manual keychain smoke run on macOS
 
 ### Phase 4: Import
 - [x] T8: FileZilla `sitemanager.xml` parser + fixture (S)
-- [ ] T9: FileZilla import into the store (M)
+- [x] T9: FileZilla import into the store (M)
 
 ### Checkpoint D: Module complete
-- [ ] All 9 acceptance criteria green (traceability below), fmt + clippy clean, CI green
-- [ ] Coverage ≥ 80 % lines on `filecargo-config` (if the coverage tool is approved)
-- [ ] SPEC-config status → done; SPEC.md map updated; hand-off notes appended below
+- [x] All 9 acceptance criteria green (traceability below), fmt + clippy clean, CI green
+- [x] Coverage ≥ 80 % lines on `filecargo-config`: **90.6 %** (`cargo llvm-cov --package filecargo-config`; lowest is `secrets.rs` 55 %, platform keychain code covered by the manual smoke run)
+- [x] SPEC-config status → done; SPEC.md map updated; hand-off notes appended below
 - [ ] Human review → then write `SPEC-remote-fs.md`
 
 ## Acceptance-Criteria Traceability (SPEC-config)
@@ -152,3 +152,30 @@ _Appended per task during implementation: what changed, where, and any deviation
 - `keyring-core` error mapping never formats variants that can carry secret bytes (`BadEncoding`, ...).
 - Verified: leak test fails when a secret is logged (mutation check); `cargo run -p filecargo-config --example keyring_smoke` passes on the real macOS Keychain (service `filecargo-smoke`, deleted afterwards).
 - `cargo update` was needed once: the local registry index was stale (`security-framework` 3.7). `Cargo.lock` is committed.
+
+### T8 FileZilla parser (done)
+- `import/filezilla.rs`: quick-xml → small element tree → `FzNode` (`Folder` / `Site`). Codes verified against FileZilla's source (`server.h`, via Debian sources): `ServerProtocol` FTP=0, SFTP=1, HTTP=2, FTPS(implicit)=3, FTPES(explicit)=4, HTTPS=5, INSECURE_FTP=6, S3=7, ... ; `LogonType` anonymous=0, normal=1, ask=2, interactive=3, account=4, key=5. `RemoteDir` = `CServerPath::GetSafePath` (`<type+1> <prefix-len> [<prefix> ](<len> <segment> )*`), decoded by `decode_remote_dir`.
+- **Not verified against source** (FileZilla's forum and `ReadServerElement` were not reachable): exact folder-name storage and the `crypt` password format. The parser accepts a folder name as either text or a `<Name>` child, and treats every `Pass` encoding other than base64/none as unreadable (skipped, reported). A sample from a real `sitemanager.xml` confirmed the element names `Host Port Protocol Logontype User Pass PasvMode Name Comments LocalDir RemoteDir` and `<Pass encoding="base64">`; `Keyfile` is from search-result descriptions. **Worth one manual import of a real file before relying on it.**
+- Passwords are wrapped in `Pw` (redacted `Debug`). Fixture `tests/fixtures/filezilla/sitemanager.xml` is hand-written with fake credentials.
+
+### T9 Import into the store (done)
+- `ConfigStore::import_filezilla(path, ImportOptions { import_passwords, folder_name }) -> Result<ImportReport, ImportError>`. Everything is planned in memory (`import::plan`), validated with the existing tree, and written once under the config lock; keychain writes happen after the file write and a failure is reported in `passwords_skipped` ("keychain error: ..."), not raised. A file that fails to parse, or a `servers.toml` that is corrupt, leaves everything untouched.
+- Mapping: Ftp/InsecureFtp → `Ftp`; Normal/Account → `Password{remember:true}`; Ask/Interactive → `Password{remember:false}`; Key (SFTP only, needs a key file) → `KeyFile`; `MODE_ACTIVE` → `FtpMode::Active`; a port equal to the protocol default is stored as `None`. A readable password becomes the site's password (or key passphrase) secret only when `import_passwords` is set. Unsupported protocols/logons, no host, anonymous-on-SFTP are skipped with a reason.
+- Duplicate names in one folder get ` (2)`, ` (3)`; the root folder gets the same suffix if the name is taken. Nothing is written when there is nothing to import.
+- `default_filezilla_path()` returns FileZilla's own file location (path only, never read by code or tests).
+- `ImportError { Io, Parse { path, line, msg }, Format, Config }`.
+
+### Checkpoint D: acceptance criteria → tests
+| AC | Test |
+|---|---|
+| 1 | `store::tests::fresh_dir_opens_empty_and_writes_nothing` |
+| 2 | `tests/tree_props.rs` (1,000 cases verified; 256 by default) |
+| 3 | `store::tests::invalid_sites_*`, `rejected_update_*`, `tests/tree_ops.rs` |
+| 4 | `tests/store_concurrency.rs::stale_store_merges_*`, `concurrent_writers_lose_no_operation` |
+| 5 | `tests/store_concurrency.rs::corrupt_file_reports_line_*`, `apply_after_external_corruption_*` |
+| 6 | `tests/secrets.rs::deleting_a_folder_with_three_sites_removes_their_secrets` |
+| 7 | `tests/secrets.rs::sentinel_secret_never_reaches_files_debug_output_or_logs` (mutation-checked) |
+| 8 | `tests/import.rs::fixture_imports_to_the_exact_expected_tree_and_report`, parser tests |
+| 9 | `Paths::from_override` + every test uses temp dirs and `MemoryStore` |
+
+Totals: 69 tests, line coverage 90.6 %, fmt/clippy/actionlint clean.

@@ -73,6 +73,19 @@ impl ServerTree {
         Ok(tree)
     }
 
+    /// A copy of this tree with `folders` and `sites` added, validated as a whole.
+    pub(crate) fn extended(
+        &self,
+        folders: Vec<Folder>,
+        sites: Vec<Site>,
+    ) -> Result<Self, ValidationError> {
+        let mut next = self.clone();
+        next.folders.extend(folders);
+        next.sites.extend(sites);
+        next.validate()?;
+        Ok(next)
+    }
+
     pub fn folders(&self) -> &[Folder] {
         &self.folders
     }

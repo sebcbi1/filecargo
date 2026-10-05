@@ -1,11 +1,12 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::ConfigError;
+use crate::error::{ConfigError, ImportError};
 use crate::fsio;
+use crate::import::{self, ImportOptions, ImportReport};
 use crate::model::{Auth, Folder, NodeId, Site};
 use crate::paths::Paths;
 use crate::secrets::{SecretKey, SecretStore};
@@ -216,6 +217,58 @@ impl ConfigStore {
         }
     }
 
+    /// Imports a FileZilla `sitemanager.xml` under a new root folder.
+    ///
+    /// The result is validated and written in a single atomic write; on any failure nothing is
+    /// written and no secret is stored. Passwords go to the keychain only after the file write
+    /// (a keychain failure is reported in [`ImportReport::passwords_skipped`], not an error).
+    pub fn import_filezilla(
+        &mut self,
+        path: &Path,
+        opts: ImportOptions,
+    ) -> Result<ImportReport, ImportError> {
+        let bytes = std::fs::read(path).map_err(|source| ImportError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let nodes = import::parse(path, &String::from_utf8_lossy(&bytes))?;
+
+        let _lock = fsio::lock_exclusive(&self.paths.lock())?;
+        self.reload()?;
+        let mut plan = import::plan(&nodes, &opts, |name| {
+            let wanted = name.trim().to_lowercase();
+            self.tree
+                .children(None)
+                .iter()
+                .any(|n| node_name(n).trim().to_lowercase() == wanted)
+        });
+        if plan.folders.is_empty() && plan.sites.is_empty() {
+            return Ok(plan.report);
+        }
+
+        let next = self
+            .tree
+            .extended(plan.folders, plan.sites)
+            .map_err(ConfigError::from)?;
+        let tree_bytes = serialize(&next)?.into_bytes();
+        fsio::write_atomic(&self.paths.servers(), &tree_bytes)?;
+        self.tree = next;
+        self.loaded = Some(tree_bytes);
+
+        for (key, value, site) in plan.secrets {
+            if let Err(error) = self.secrets.set(&key, &value) {
+                tracing::warn!(?key, %error, "could not store imported password");
+                plan.report
+                    .passwords_skipped
+                    .push(import::PasswordNotImported {
+                        site,
+                        reason: format!("keychain error: {error}"),
+                    });
+            }
+        }
+        Ok(plan.report)
+    }
+
     /// Moves an unreadable `servers.toml` aside to `servers.toml.bak-<unix-seconds>` so a fresh
     /// store can be opened. Returns the backup path, or `None` when there was no file.
     pub fn reset(paths: &Paths) -> Result<Option<PathBuf>, ConfigError> {
@@ -236,6 +289,13 @@ impl ConfigStore {
             .unwrap_or_else(|| path.with_extension("toml.bak"));
         fsio::rename(&path, &backup)?;
         Ok(Some(backup))
+    }
+}
+
+fn node_name<'a>(node: &crate::tree::Node<'a>) -> &'a str {
+    match node {
+        crate::tree::Node::Folder(f) => &f.name,
+        crate::tree::Node::Site(s) => &s.name,
     }
 }
 
