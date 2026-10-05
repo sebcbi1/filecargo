@@ -34,7 +34,7 @@ through gpui-kit, and must never be added directly.
 ### Phase 2: Sessions and editing
 - [x] T3: Server tree view, connect/disconnect, remote pane, toolbar with session status (M)
 - [x] T4: Dialog infrastructure, site editor, tree context-menu operations (new, rename, duplicate, move, delete, import) (M)
-- [ ] T5: Prompt dialogs for every `PromptKind`, permissions dialog, settings dialog, notices → notifications (M)
+- [x] T5: Prompt dialogs for every `PromptKind`, permissions dialog, settings dialog, notices → notifications (M)
 ### Checkpoint B: connect over SFTP with host-key and password prompts, edit sites, change settings
 ### Phase 3: Transfers, terminal, polish
 - [ ] T6: Bottom panel (`TabBar`), Queue / Completed / Failed tables with progress, Log `uniform_list`, transfer actions (F5, double-click, menus), batch-complete OS notification (M)
@@ -94,3 +94,11 @@ _Appended per task during implementation._
 - Tests: 5 unit tests for `FormValues`, 1 for name checks, and `tests/dialogs.rs` (8, real dialogs in a headless window): the **AC4 round trip** (create → in the tree → edit keeps the id → values persisted), invalid form stays open with the message, remembered password reaches the keychain, rename (refuses `a/b`), new folder, delete only after confirming, move, import of the FileZilla fixture (6 sites).
 - Test setup note: dialogs animate on the wall clock; the harness calls `cx.set_reduce_motion(true)`.
 - Not covered by a test: the *Browse…* pickers (OS dialogs) — in the smoke list.
+
+### T5 Prompts, permissions, settings, notices (done)
+- `prompts.rs`: `PromptHost` (an entity of the workspace) opens a dialog when a **new prompt id** appears in the snapshot, one per `PromptKind`; a shared `Answerer` sends the `Command::Answer` exactly once, and **Esc gives the prompt's "no" answer** (credential → `None`, trust → `Reject`, confirm → `false`, conflict / message → `Dismiss`), so a prompt is never left unanswered with its dialog gone. Overlay clicks and the close button are disabled on prompt dialogs.
+  - Credential (password / passphrase / keyboard-interactive): masked or echoed inputs per prompt, a *Remember* checkbox except for keyboard-interactive, a retry note. Host key and certificate: the details and *Reject* / *Trust once* / *Trust always* (no default button). Conflict: both files' sizes and times, the five rules as buttons plus *Apply to all remaining files*. Confirm delete / quit: `AlertDialog`-style Cancel / OK (red OK). Message: OK (the import report is its lines).
+- `dialogs/permissions.rs`: octal field and the nine rwx checkboxes in step both ways (special bits typed in octal survive a box toggle), `Command::Chmod` on the selection; opened from the remote pane's context menu (*Permissions…*). `dialogs/settings.rs`: `SettingsForm` (pure, unit-tested: ranges 1–10 / > 0, empty start folder = `~`) + view; toolbar *Settings* button and `secondary-,`.
+- `notices.rs`: `NoticeHost` turns each new `AppState.notices` entry into a notification (info / warning auto-hide, errors stay) and closing one sends `DismissNotice`. The batch-complete OS notification comes with the transfers (T6).
+- Tests: `tests/prompts.rs` (10, **one per kind plus the "no" paths**: password typed into the real input, cancel, host key once / reject, certificate always, conflict overwrite / skip with a check that nothing is written before the answer, confirm delete (cancel then confirm), confirm quit with a slow transfer running, message), `tests/utility.rs` (3: permissions → file mode changes on disk, settings save + bad number refused, notice → notification → close → dismissed). The test factory (`tests/support/factory.rs`) is app-core's with host-key / certificate triggers; `terminal.rs` has the fake shell for T7.
+- Gotchas: the notification's close button only exists while hovered (`window.hover(..)` first).

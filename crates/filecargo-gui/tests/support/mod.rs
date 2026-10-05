@@ -16,6 +16,7 @@ use gpui_kit::{
 };
 
 pub mod factory;
+pub mod terminal;
 
 pub struct Harness {
     pub app: AppHandle,

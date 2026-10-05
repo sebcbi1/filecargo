@@ -12,17 +12,21 @@ use gpui_kit::{
 };
 
 use crate::model::AppModel;
+use crate::notices::NoticeHost;
 use crate::pane::FilePaneView;
+use crate::prompts::PromptHost;
 use crate::toolbar::session_label;
 use crate::tree::ServerTreeView;
 
-gpui_kit::actions!(filecargo, [Quit]);
+gpui_kit::actions!(filecargo, [Quit, OpenSettings]);
 
 pub struct Workspace {
     pub model: Entity<AppModel>,
     pub tree: Entity<ServerTreeView>,
     pub local: Entity<FilePaneView>,
     pub remote: Entity<FilePaneView>,
+    _prompts: Entity<PromptHost>,
+    _notices: Entity<NoticeHost>,
     /// How many times the view drew (tests use it to see that a snapshot re-rendered).
     pub renders: usize,
     _observe: Subscription,
@@ -34,6 +38,8 @@ impl Workspace {
         let tree = cx.new(|cx| ServerTreeView::new(model.clone(), cx));
         let local = cx.new(|cx| FilePaneView::new(PaneId::Local, model.clone(), window, cx));
         let remote = cx.new(|cx| FilePaneView::new(PaneId::Remote, model.clone(), window, cx));
+        let _prompts = cx.new(|cx| PromptHost::new(model.clone(), window, cx));
+        let _notices = cx.new(|cx| NoticeHost::new(model.clone(), window, cx));
         // every new snapshot re-renders the workspace
         let _observe = cx.observe(&model, |_, _, cx| cx.notify());
         // the toolbar depends on the tree selection
@@ -43,6 +49,8 @@ impl Workspace {
             tree,
             local,
             remote,
+            _prompts,
+            _notices,
             renders: 0,
             _observe,
             _observe_tree,
@@ -158,6 +166,15 @@ impl Workspace {
                         crate::dialogs::tree_ops::import(this.model.clone(), window, cx);
                     })),
             )
+            .child(
+                Button::new("settings")
+                    .small()
+                    .icon(IconName::Settings)
+                    .label("Settings")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        crate::dialogs::settings::open(this.model.clone(), window, cx);
+                    })),
+            )
             .child(div().flex_1())
             .child(
                 div()
@@ -192,6 +209,9 @@ impl Render for Workspace {
         v_flex()
             .id("workspace")
             .key_context("Workspace")
+            .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
+                crate::dialogs::settings::open(this.model.clone(), window, cx);
+            }))
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -216,6 +236,7 @@ pub fn bind_keys(cx: &mut gpui_kit::App) {
     use gpui_kit::KeyBinding;
     cx.bind_keys([
         KeyBinding::new("secondary-q", Quit, None),
+        KeyBinding::new("secondary-,", OpenSettings, None),
         KeyBinding::new("enter", OpenRow, Some("FilePane")),
         KeyBinding::new("backspace", ParentDir, Some("FilePane")),
         KeyBinding::new("secondary-a", SelectAllRows, Some("FilePane")),

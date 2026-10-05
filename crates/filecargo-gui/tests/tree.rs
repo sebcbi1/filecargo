@@ -5,7 +5,7 @@ mod support;
 use filecargo_app_core::prelude::*;
 use gpui_kit::test::TestWindowExt as _;
 use gpui_kit::{AppContext as _, TestAppContext};
-use support::factory::RootedFactory;
+use support::factory::TestFactory;
 
 fn site(name: &str, host: &str) -> Site {
     let mut site = Site::new(name, Protocol::Sftp, host);
@@ -19,8 +19,8 @@ async fn setup(cx: &mut TestAppContext) -> (support::Harness, tempfile::TempDir,
     let served = tempfile::tempdir().unwrap();
     std::fs::create_dir(served.path().join("html")).unwrap();
     std::fs::write(served.path().join("index.php"), "<?php").unwrap();
-    let factory = RootedFactory::new();
-    factory.serve("prod.example.org", served.path().to_path_buf());
+    let factory = TestFactory::new();
+    factory.serve("prod.example.org", served.path().to_path_buf(), None);
     let h = support::open_with(cx, |options| options.connector = Some(factory));
 
     h.app.send(Command::Tree(TreeOp::AddFolder {

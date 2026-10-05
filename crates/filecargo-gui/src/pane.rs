@@ -515,3 +515,24 @@ impl ErrorOf for Arc<AppState> {
         pane_data(self, pane).and_then(|d| d.error)
     }
 }
+
+impl FilePaneView {
+    /// The permissions dialog for the selection (or the row under the cursor).
+    pub fn open_permissions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let names = self.target_names(cx);
+        if names.is_empty() {
+            return;
+        }
+        let mode = {
+            let table = self.table.read(cx);
+            let delegate = table.delegate();
+            delegate
+                .entries
+                .iter()
+                .find(|e| e.name == names[0])
+                .and_then(|e| e.permissions)
+                .unwrap_or(0o644)
+        };
+        crate::dialogs::permissions::open(self.model.clone(), names, mode, window, cx);
+    }
+}
