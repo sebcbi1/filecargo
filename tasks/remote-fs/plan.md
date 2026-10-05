@@ -50,7 +50,7 @@ T3 docker servers + CI integration job ─────────────�
 ### Phase 2: SFTP
 - [x] T4: Connect plumbing (`ConnectContext`, `Prompter`, `SessionTrust`, `Session`, `ConnectError`), SFTP transport + host-key verification (M)
 - [x] T5: SFTP auth: password / keyboard-interactive with lookup order, remember and retry-once; key file incl. encrypted; agent (M)
-- [ ] T6: SFTP `RemoteFs` over russh-sftp; contract suite green on docker `sftp`; keepalive (M)
+- [x] T6: SFTP `RemoteFs` over russh-sftp; contract suite green on docker `sftp`; keepalive (M)
 - [ ] T7: `ShellOpener` / `ShellChannel` with a draining pump and resize (S)
 ### Checkpoint B: AC3, AC4, AC7, AC8 + contract (SFTP) green
 ### Phase 3: FTP / FTPS
@@ -115,3 +115,12 @@ _Appended per task during implementation._
 - Key file: `~` expansion, `KeyIsEncrypted` → passphrase lookup, wrong passphrase retried once, then `ConnectError::KeyFile`. RSA hash via `best_supported_rsa_hash`.
 - Agent: unix `connect_uds` / `SSH_AUTH_SOCK`; Windows named pipe `\\.\pipe\openssh-ssh-agent` then Pageant (**compile-checked only in CI**). Every plain-key identity is tried; certificates are skipped.
 - **New pub field `ConnectContext::agent_socket: Option<PathBuf>`** so tests can use their own agent (the crate forbids `unsafe`, so `set_var` is out). The agent test spawns `ssh-agent`, loads a 0600 copy of `id_plain`, and skips itself when `ssh-agent` is missing.
+
+### T6 SFTP filesystem (done)
+- `sftp::open(site, ctx) -> SftpFs` (connect + auth + subsystem); `connect(site, ctx) -> Session { fs, info }` dispatches on protocol (FTP family returns `Unsupported` until T8). `SessionInfo { protocol, banner, tls, home }`. The `shell` field of `Session` arrives with T7.
+- Contract suite instantiated with `contract_suite!(sftp, sftp_fixture)` under `--features integration`: all 17 scenarios green at the full 10,000-entry listing (~19 s). Each test works in `<home>/fc-contract-<pid>-<n>`, removed on success.
+- `rename` is plain SFTP `rename` (fails if the destination exists on OpenSSH). `transfer` must delete or use a different strategy when it wants an atomic replace; revisit then (the `posix-rename@openssh.com` extension is not exposed by russh-sftp's high-level API).
+- OpenSSH answers "failure" for mkdir-on-existing and rmdir-on-non-empty; the backend disambiguates with a follow-up `stat` / `list` so callers get `AlreadyExists` / `DirectoryNotEmpty`.
+- Errors from `File` reads/writes arrive as `io::Error` wrapping the sftp error; `map_io` downcasts it to keep `NotFound` / `PermissionDenied` / `Timeout`.
+- `list` order: russh-sftp reverses the READDIR chunk order, so "server order" holds only within a chunk. Owner/group stay `None`.
+- Throughput over loopback docker with defaults (16 in-flight requests, 32 KiB writes): ~54 MB/s up, ~37 MB/s down for 20 MB. Not tuned further; revisit if `transfer` shows a bottleneck.

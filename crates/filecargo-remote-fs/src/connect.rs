@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use filecargo_config::{ConnectionSettings, Paths, SecretStore};
+use filecargo_config::{ConnectionSettings, Paths, Protocol, SecretStore, Site};
 
-use crate::{FsError, Prompter, SessionTrust};
+use crate::{FsError, Prompter, RemoteFs, RemotePath, SessionTrust};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -70,5 +70,44 @@ impl ConnectContext {
             user_known_hosts: std::env::home_dir().map(|h| h.join(".ssh").join("known_hosts")),
             agent_socket: None,
         }
+    }
+}
+
+/// What the UI shows about a connected session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionInfo {
+    pub protocol: Protocol,
+    /// Server greeting, when the protocol has one.
+    pub banner: Option<String>,
+    /// TLS version and cipher for FTPS sessions.
+    pub tls: Option<String>,
+    pub home: RemotePath,
+}
+
+/// A connected server.
+pub struct Session {
+    pub fs: Arc<dyn RemoteFs>,
+    pub info: SessionInfo,
+}
+
+/// Connects to `site`, prompting through `ctx.prompter` when a decision is needed.
+pub async fn connect(site: &Site, ctx: &ConnectContext) -> Result<Session, ConnectError> {
+    match site.protocol {
+        Protocol::Sftp => {
+            let sftp = crate::sftp::open(site, ctx).await?;
+            let home = sftp.home().await?;
+            Ok(Session {
+                info: SessionInfo {
+                    protocol: Protocol::Sftp,
+                    banner: None,
+                    tls: None,
+                    home,
+                },
+                fs: Arc::new(sftp),
+            })
+        }
+        Protocol::Ftp | Protocol::FtpsExplicit | Protocol::FtpsImplicit => Err(ConnectError::Fs(
+            FsError::Unsupported("FTP (not implemented yet)"),
+        )),
     }
 }

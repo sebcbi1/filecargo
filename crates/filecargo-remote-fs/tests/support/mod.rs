@@ -94,3 +94,28 @@ impl Prompter for TestPrompter {
             .unwrap_or(TrustDecision::Reject)
     }
 }
+
+// ---- docker sftp session -----------------------------------------------------------------
+
+use filecargo_config::{Auth, MemoryStore, Paths, Protocol, Site};
+use filecargo_remote_fs::{ConnectContext, Session, connect};
+
+/// A connected session to the docker `sftp` server (`fcuser` / `fcpass`, port 2222).
+pub async fn docker_sftp() -> (Session, Arc<TestPrompter>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let prompter = TestPrompter::new();
+    prompter.trust(TrustDecision::TrustOnce);
+    prompter.answer(&["fcpass"], false);
+    let mut ctx = ConnectContext::new(
+        Paths::from_override(Some(dir.path().join("cfg"))),
+        Arc::new(MemoryStore::new()),
+        prompter.clone(),
+    );
+    ctx.user_known_hosts = None;
+    let mut site = Site::new("docker-sftp", Protocol::Sftp, "127.0.0.1");
+    site.port = Some(2222);
+    site.user = "fcuser".to_owned();
+    site.auth = Auth::Password { remember: false };
+    let session = connect(&site, &ctx).await.unwrap();
+    (session, prompter, dir)
+}

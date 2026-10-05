@@ -11,7 +11,7 @@ mod prompt;
 pub mod sftp;
 mod trust;
 
-pub use connect::{ConnectContext, ConnectError};
+pub use connect::{ConnectContext, ConnectError, Session, SessionInfo, connect};
 pub use entry::{Capabilities, Entry, EntryKind};
 pub use error::FsError;
 pub use fs::{NoProgress, Progress, RemoteFs};

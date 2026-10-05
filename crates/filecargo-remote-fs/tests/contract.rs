@@ -43,6 +43,15 @@ impl Fixture {
         out
     }
 
+    /// Removes this test's directory and closes the connection (skipped when a test fails, so
+    /// the debris stays for inspection).
+    async fn finish(self) {
+        if self.base != RemotePath::root() {
+            self.fs.remove_all(&self.base).await.unwrap();
+        }
+        self.fs.close().await;
+    }
+
     async fn names(&self, dir: &RemotePath) -> Vec<String> {
         let mut names: Vec<_> = self
             .fs
@@ -299,6 +308,7 @@ macro_rules! contract_tests {
             async fn $name() {
                 let fx = $setup().await;
                 scenarios::$name(&fx).await;
+                fx.finish().await;
             }
         )*
     };
@@ -342,3 +352,53 @@ async fn rooted_fixture() -> Fixture {
 }
 
 contract_suite!(rooted, rooted_fixture);
+
+#[cfg(feature = "integration")]
+mod network {
+    use std::sync::atomic::AtomicUsize;
+
+    use filecargo_config::{Auth, MemoryStore, Paths, Protocol, Site};
+    use filecargo_remote_fs::{ConnectContext, TrustDecision, connect};
+
+    use super::*;
+    use support::TestPrompter;
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    /// Connects `site` (prompts answered with `password`), then makes a private directory.
+    async fn fixture_for(mut site: Site, password: &str) -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let prompter = TestPrompter::new();
+        prompter.trust(TrustDecision::TrustOnce);
+        prompter.answer(&[password], false);
+        let mut ctx = ConnectContext::new(
+            Paths::from_override(Some(dir.path().join("cfg"))),
+            Arc::new(MemoryStore::new()),
+            prompter,
+        );
+        ctx.user_known_hosts = None;
+        site.auth = Auth::Password { remember: false };
+        let session = connect(&site, &ctx).await.unwrap();
+        let unique = format!(
+            "fc-contract-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::SeqCst)
+        );
+        let base = session.info.home.join(&unique).unwrap();
+        session.fs.mkdir(&base).await.unwrap();
+        Fixture {
+            fs: session.fs,
+            base,
+            _keep: Box::new(dir),
+        }
+    }
+
+    async fn sftp_fixture() -> Fixture {
+        let mut site = Site::new("docker-sftp", Protocol::Sftp, "127.0.0.1");
+        site.port = Some(2222);
+        site.user = "fcuser".to_owned();
+        fixture_for(site, "fcpass").await
+    }
+
+    contract_suite!(sftp, sftp_fixture);
+}
