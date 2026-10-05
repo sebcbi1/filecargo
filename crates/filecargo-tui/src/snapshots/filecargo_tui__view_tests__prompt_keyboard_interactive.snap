@@ -31,4 +31,4 @@ expression: prompt_screen(kbd)
 "│                                                                                                  │"
 "│                                                                                                  │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" q quit  Tab focus                                                                                  "
+" F5 upload · g go to · . dotfiles · s sort · F1 help · q quit                                       "

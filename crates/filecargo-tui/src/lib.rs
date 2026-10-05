@@ -7,6 +7,8 @@ pub mod dialog_util;
 pub mod dialog_view;
 pub mod form;
 pub mod guard;
+pub mod help;
+pub mod help_view;
 pub mod keymap;
 pub mod keys;
 pub mod layout;

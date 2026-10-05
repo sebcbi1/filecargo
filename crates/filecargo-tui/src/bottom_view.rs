@@ -13,21 +13,39 @@ use crate::ui_state::{BottomTab, Focus, ListUi, UiState};
 use crate::view::Look;
 
 const BAR: usize = 10;
+/// The label of a tab with its count, e.g. ` Queue (3) `.
+fn tab_label(tab: BottomTab, app: &AppState) -> (String, Option<usize>) {
+    let count = match tab {
+        BottomTab::Queue => Some(app.queue.pending.len()),
+        BottomTab::Completed => Some(app.queue.completed.len()),
+        BottomTab::Failed => Some(app.queue.failed.len()),
+        BottomTab::Log | BottomTab::Terminal => None,
+    };
+    let text = match count {
+        Some(n) => format!(" {} ({n}) ", tab.name()),
+        None => format!(" {} ", tab.name()),
+    };
+    (text, count)
+}
+
+/// The tab whose title covers column `x` of the title row, counted from the first title cell.
+pub fn tab_at(app: &AppState, x: u16) -> Option<BottomTab> {
+    let mut start = 0usize;
+    for tab in BottomTab::ALL {
+        let width = tab_label(tab, app).0.chars().count();
+        if usize::from(x) >= start && usize::from(x) < start + width {
+            return Some(tab);
+        }
+        start += width + 1; // the separator
+    }
+    None
+}
 
 fn tab_title(ui: &UiState, app: &AppState, look: &Look) -> Line<'static> {
     let focused = ui.focus == Focus::Bottom;
     let mut spans = Vec::new();
     for tab in BottomTab::ALL {
-        let count = match tab {
-            BottomTab::Queue => Some(app.queue.pending.len()),
-            BottomTab::Completed => Some(app.queue.completed.len()),
-            BottomTab::Failed => Some(app.queue.failed.len()),
-            BottomTab::Log | BottomTab::Terminal => None,
-        };
-        let text = match count {
-            Some(n) => format!(" {} ({n}) ", tab.name()),
-            None => format!(" {} ", tab.name()),
-        };
+        let (text, count) = tab_label(tab, app);
         let mut style = Style::new();
         if tab == BottomTab::Failed && count.unwrap_or(0) > 0 {
             style = style.patch(look.tint(Color::Red));

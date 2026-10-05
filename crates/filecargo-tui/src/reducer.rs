@@ -4,6 +4,7 @@ use filecargo_app_core::prelude::*;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
+use crate::bottom_view;
 use crate::dialog::{
     ConfirmDialog, Dialog, InputDialog, InputPurpose, MovePicker, Outcome, SiteEditor,
 };
@@ -819,7 +820,189 @@ fn terminal_key(ui: &mut UiState, app: &AppState, key: KeyEvent) -> Vec<Command>
     }
 }
 
+/// Keys while the help overlay is open.
+fn help_key(ui: &mut UiState, key: KeyEvent) {
+    let Some(scroll) = ui.help else { return };
+    let max = crate::help_view::max_scroll(ui.size.1);
+    let page = crate::help_view::visible_rows(ui.size.1)
+        .saturating_sub(1)
+        .max(1);
+    ui.help = match key.code {
+        KeyCode::Esc | KeyCode::F(1) | KeyCode::Char('?' | 'q') => None,
+        KeyCode::Up | KeyCode::Char('k') => Some(scroll.saturating_sub(1)),
+        KeyCode::Down | KeyCode::Char('j') => Some((scroll + 1).min(max)),
+        KeyCode::PageUp => Some(scroll.saturating_sub(page)),
+        KeyCode::PageDown => Some((scroll + page).min(max)),
+        KeyCode::Home => Some(0),
+        KeyCode::End => Some(max),
+        _ => Some(scroll),
+    };
+}
+
+/// Any key press dismisses the notices on show, then is handled as usual.
 pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> {
+    let mut commands = Vec::new();
+    if matches!(event, Event::Key(_)) {
+        commands.extend(app.notices.iter().map(|n| Command::DismissNotice(n.id)));
+    }
+    commands.extend(handle_event(ui, app, event));
+    commands
+}
+
+const WHEEL_STEP: usize = 3;
+
+/// Which area a terminal cell belongs to, and that area's rectangle.
+fn area_at(ui: &UiState, app: &AppState, x: u16, y: u16) -> Option<(Focus, Rect)> {
+    let areas = layout::areas(
+        Rect::new(0, 0, ui.size.0, ui.size.1),
+        ui.tree_visible(),
+        ui.maximize_bottom,
+    );
+    let at = ratatui::layout::Position::new(x, y);
+    let mut candidates = vec![(Focus::Bottom, areas.bottom)];
+    if !ui.maximize_bottom {
+        candidates.push((Focus::Local, areas.local));
+        if app.remote.is_some() {
+            candidates.push((Focus::Remote, areas.remote));
+        }
+        if let Some(tree) = areas.tree {
+            candidates.push((Focus::Tree, tree));
+        }
+    }
+    candidates.into_iter().find(|(_, rect)| rect.contains(at))
+}
+
+/// The row of a list drawn from `first_row_y` with the given scroll offset.
+fn row_at(y: u16, first_row_y: u16, offset: usize) -> Option<usize> {
+    y.checked_sub(first_row_y)
+        .map(|row| usize::from(row) + offset)
+}
+
+fn mouse_event(ui: &mut UiState, app: &AppState, mouse: MouseEvent) -> Vec<Command> {
+    use ratatui::crossterm::event::{MouseButton, MouseEventKind};
+    if ui.prompt.is_some() && app.prompt.is_some() || ui.dialog.is_some() {
+        return Vec::new();
+    }
+    if let Some(scroll) = ui.help {
+        let max = crate::help_view::max_scroll(ui.size.1);
+        match mouse.kind {
+            MouseEventKind::ScrollUp => ui.help = Some(scroll.saturating_sub(WHEEL_STEP)),
+            MouseEventKind::ScrollDown => ui.help = Some((scroll + WHEEL_STEP).min(max)),
+            _ => {}
+        }
+        return Vec::new();
+    }
+    let Some((focus, area)) = area_at(ui, app, mouse.column, mouse.row) else {
+        return Vec::new();
+    };
+    match mouse.kind {
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+            let up = mouse.kind == MouseEventKind::ScrollUp;
+            wheel(ui, app, focus, up)
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            ui.focus = focus;
+            click(ui, app, focus, area, mouse.column, mouse.row);
+            Vec::new()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn wheel(ui: &mut UiState, app: &AppState, focus: Focus, up: bool) -> Vec<Command> {
+    let step = |cursor: usize, last: usize| {
+        if up {
+            cursor.saturating_sub(WHEEL_STEP)
+        } else {
+            (cursor + WHEEL_STEP).min(last)
+        }
+    };
+    match focus {
+        Focus::Local | Focus::Remote => {
+            let Some(view) = pane_view(app, focus) else {
+                return Vec::new();
+            };
+            let rows = viewport(ui, focus);
+            if let Some(pane) = ui.pane_mut(focus) {
+                pane.cursor = step(pane.cursor, view.rows().saturating_sub(1));
+                scroll_to_cursor(pane, rows);
+            }
+        }
+        Focus::Tree => {
+            let last = tree::rows(&app.servers, &ui.tree.expanded)
+                .len()
+                .saturating_sub(1);
+            let height = tree_viewport(ui);
+            ui.tree.cursor = step(ui.tree.cursor, last);
+            if ui.tree.cursor < ui.tree.offset {
+                ui.tree.offset = ui.tree.cursor;
+            } else if ui.tree.cursor >= ui.tree.offset + height {
+                ui.tree.offset = ui.tree.cursor + 1 - height;
+            }
+        }
+        Focus::Bottom => match ui.bottom.tab {
+            BottomTab::Log => {
+                for _ in 0..WHEEL_STEP {
+                    scroll_log(ui, if up { Action::Up } else { Action::Down });
+                }
+            }
+            BottomTab::Terminal => {
+                let lines = i32::try_from(WHEEL_STEP).unwrap_or(3);
+                return vec![Command::TerminalScroll(if up { lines } else { -lines })];
+            }
+            tab => {
+                let (len, rows) = (list_len(app, tab), bottom_rows(ui));
+                if let Some(list) = ui.bottom.list_mut() {
+                    list.cursor = step(list.cursor, len.saturating_sub(1));
+                    keep_in_view(list, len, rows);
+                }
+            }
+        },
+    }
+    Vec::new()
+}
+
+fn click(ui: &mut UiState, app: &AppState, focus: Focus, area: Rect, x: u16, y: u16) {
+    match focus {
+        Focus::Local | Focus::Remote => {
+            let Some(view) = pane_view(app, focus) else {
+                return;
+            };
+            let offset = ui.pane(focus).map_or(0, |p| p.offset);
+            // border, then the header row
+            if let Some(row) = row_at(y, area.y + 2, offset).filter(|r| *r < view.rows())
+                && let Some(pane) = ui.pane_mut(focus)
+            {
+                pane.cursor = row;
+            }
+        }
+        Focus::Tree => {
+            let len = tree::rows(&app.servers, &ui.tree.expanded).len();
+            if let Some(row) = row_at(y, area.y + 1, ui.tree.offset).filter(|r| *r < len) {
+                ui.tree.cursor = row;
+            }
+        }
+        Focus::Bottom => {
+            if y == area.y {
+                if let Some(tab) = bottom_view::tab_at(app, x.saturating_sub(area.x + 1)) {
+                    ui.bottom.tab = tab;
+                }
+                return;
+            }
+            let tab = ui.bottom.tab;
+            let len = list_len(app, tab);
+            let rows = bottom_rows(ui);
+            if let Some(list) = ui.bottom.list_mut()
+                && let Some(row) = row_at(y, area.y + 2, list.offset).filter(|r| *r < len)
+            {
+                list.cursor = row;
+                keep_in_view(list, len, rows);
+            }
+        }
+    }
+}
+
+fn handle_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> {
     match event {
         Event::Resize(width, height) => {
             ui.size = (width, height);
@@ -833,6 +1016,10 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
                 .is_some_and(|p| app.prompt.as_ref().is_some_and(|a| a.id == p.id))
             {
                 return prompt_key(ui, app, key);
+            }
+            if ui.help.is_some() {
+                help_key(ui, key);
+                return Vec::new();
             }
             if ui.dialog.is_none()
                 && ui.focus == Focus::Bottom
@@ -857,6 +1044,10 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
                 }
                 Action::FocusPrev => {
                     shift_focus(ui, app, false);
+                    Vec::new()
+                }
+                Action::Help => {
+                    ui.help = Some(0);
                     Vec::new()
                 }
                 Action::BottomTab(index) => {
@@ -911,7 +1102,7 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
             }
             Vec::new()
         }
-        Event::Mouse(_) => Vec::new(),
+        Event::Mouse(mouse) => mouse_event(ui, app, mouse),
     }
 }
 
@@ -2237,5 +2428,161 @@ mod terminal_tests {
             b"\x1b[200~ab\x1b[201~",
             "the end marker cannot be smuggled in"
         );
+    }
+}
+
+#[cfg(test)]
+mod polish_tests {
+    use ratatui::crossterm::event::{
+        KeyCode, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+
+    use super::*;
+    use crate::test_support::{app, busy_queue, connected_app, sample_tree, synced};
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn mouse(kind: MouseEventKind, column: u16, row: u16) -> Event {
+        Event::Mouse(MouseEvent {
+            kind,
+            column,
+            row,
+            modifiers: KeyModifiers::NONE,
+        })
+    }
+
+    fn click(column: u16, row: u16) -> Event {
+        mouse(MouseEventKind::Down(MouseButton::Left), column, row)
+    }
+
+    #[test]
+    fn f1_and_question_mark_open_the_help_which_swallows_keys_until_it_closes() {
+        let app = app();
+        for opener in [key(KeyCode::F(1)), key(KeyCode::Char('?'))] {
+            let mut ui = synced(100, 30, &app);
+            on_event(&mut ui, &app, opener);
+            assert_eq!(ui.help, Some(0));
+            assert!(on_event(&mut ui, &app, key(KeyCode::Char('j'))).is_empty());
+            assert_eq!(ui.help, Some(1), "j scrolls the help, not the pane");
+            assert_eq!(ui.local.cursor, 0);
+            assert!(on_event(&mut ui, &app, key(KeyCode::Char('q'))).is_empty());
+            assert!(ui.help.is_none(), "q closes the help instead of quitting");
+            assert!(!ui.quit_requested);
+        }
+    }
+
+    #[test]
+    fn the_help_scroll_stops_at_both_ends() {
+        let app = app();
+        let mut ui = synced(100, 30, &app);
+        on_event(&mut ui, &app, key(KeyCode::F(1)));
+        on_event(&mut ui, &app, key(KeyCode::Up));
+        assert_eq!(ui.help, Some(0));
+        on_event(&mut ui, &app, key(KeyCode::End));
+        let max = crate::help_view::max_scroll(30);
+        assert_eq!(ui.help, Some(max));
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        assert_eq!(ui.help, Some(max));
+        on_event(&mut ui, &app, key(KeyCode::Esc));
+        assert!(ui.help.is_none());
+    }
+
+    #[test]
+    fn any_key_dismisses_the_notices_on_show_and_is_still_handled() {
+        let mut app = app();
+        app.notices = vec![
+            Notice {
+                id: NoticeId(1),
+                level: Level::Info,
+                text: "one".into(),
+            },
+            Notice {
+                id: NoticeId(2),
+                level: Level::Error,
+                text: "two".into(),
+            },
+        ];
+        let mut ui = synced(100, 30, &app);
+        let commands = on_event(&mut ui, &app, key(KeyCode::Char('j')));
+        let text: Vec<String> = commands.iter().map(|c| format!("{c:?}")).collect();
+        assert_eq!(
+            text,
+            ["DismissNotice(NoticeId(1))", "DismissNotice(NoticeId(2))"]
+        );
+        assert_eq!(ui.local.cursor, 1, "the key still moved the cursor");
+        // mouse events do not dismiss
+        assert!(on_event(&mut ui, &app, mouse(MouseEventKind::Moved, 5, 5)).is_empty());
+    }
+
+    // 100x30: tree 0..20, local 20..60, remote 60..100, panes rows 0..20 (header at y=1, rows from y=2)
+    #[test]
+    fn a_click_focuses_the_area_and_selects_the_row_under_the_pointer() {
+        let app = connected_app();
+        let mut ui = synced(100, 30, &app);
+        on_event(&mut ui, &app, click(70, 4)); // remote, third row
+        assert_eq!((ui.focus, ui.remote.cursor), (Focus::Remote, 2));
+        on_event(&mut ui, &app, click(30, 3)); // local, second row
+        assert_eq!((ui.focus, ui.local.cursor), (Focus::Local, 1));
+        on_event(&mut ui, &app, click(30, 18)); // below the last entry: focus only
+        assert_eq!(ui.local.cursor, 1);
+        on_event(&mut ui, &app, click(30, 1)); // the header row selects nothing
+        assert_eq!(ui.local.cursor, 1);
+    }
+
+    #[test]
+    fn a_click_on_a_remote_pane_that_does_not_exist_changes_nothing() {
+        let app = app();
+        let mut ui = synced(100, 30, &app);
+        on_event(&mut ui, &app, click(70, 4));
+        assert_eq!(ui.focus, Focus::Local);
+    }
+
+    #[test]
+    fn the_wheel_scrolls_the_area_under_the_pointer_by_three_rows_within_bounds() {
+        let app = connected_app();
+        let mut ui = synced(100, 30, &app);
+        on_event(&mut ui, &app, mouse(MouseEventKind::ScrollDown, 30, 5));
+        assert_eq!(ui.local.cursor, 3);
+        on_event(&mut ui, &app, mouse(MouseEventKind::ScrollDown, 30, 5));
+        assert_eq!(ui.local.cursor, 5, "the last of 6 rows");
+        on_event(&mut ui, &app, mouse(MouseEventKind::ScrollUp, 30, 5));
+        assert_eq!(ui.local.cursor, 2);
+        assert_eq!(ui.remote.cursor, 0, "the other pane did not move");
+        assert_eq!(ui.focus, Focus::Local, "scrolling does not steal the focus");
+    }
+
+    #[test]
+    fn clicks_in_the_tree_and_the_bottom_panel_pick_rows_and_tabs() {
+        let mut app = app();
+        app.servers = std::sync::Arc::new(sample_tree());
+        app.queue = std::sync::Arc::new(busy_queue());
+        let mut ui = synced(100, 30, &app);
+        ui.tree.expanded = app.servers.folders().iter().map(|f| f.id).collect();
+        on_event(&mut ui, &app, click(5, 4)); // tree: rows start at y=1
+        assert_eq!((ui.focus, ui.tree.cursor), (Focus::Tree, 3));
+        // the bottom panel starts at y=21 (30 rows - status - 8 panel rows); its title row is y=21
+        let bottom = layout::areas(Rect::new(0, 0, 100, 30), true, false).bottom;
+        on_event(&mut ui, &app, click(bottom.x + 1 + 12, bottom.y)); // " Queue (3) │ Completed (2) …"
+        assert_eq!(ui.bottom.tab, BottomTab::Completed);
+        assert_eq!(ui.focus, Focus::Bottom);
+        on_event(&mut ui, &app, click(bottom.x + 3, bottom.y + 3)); // second row of the list
+        assert_eq!(ui.bottom.completed.cursor, 1);
+    }
+
+    #[test]
+    fn mouse_events_are_ignored_while_a_dialog_or_prompt_is_up() {
+        let app = connected_app();
+        let mut ui = synced(100, 30, &app);
+        ui.dialog = Some(Dialog::Confirm(ConfirmDialog {
+            title: "t".into(),
+            body: "b".into(),
+            op: TreeOp::Delete {
+                node: NodeId::Site(SiteId::new()),
+            },
+        }));
+        on_event(&mut ui, &app, click(70, 4));
+        assert_eq!(ui.focus, Focus::Local);
     }
 }

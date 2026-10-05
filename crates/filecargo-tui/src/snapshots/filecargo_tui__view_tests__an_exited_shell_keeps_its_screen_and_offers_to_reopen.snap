@@ -31,4 +31,4 @@ expression: "terminal_screen(TerminalState::Exited\n{ code: Some(0), view: shell
 "│                                                                                                  │"
 "│Shell exited (status 0). Enter to reopen · Ctrl-\ to leave                                        │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" q quit  Tab focus                                                                                  "
+" Ctrl-\ leave · Shift-PgUp scroll · F1 help · q quit                                                "

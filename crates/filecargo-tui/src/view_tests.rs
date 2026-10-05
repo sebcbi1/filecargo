@@ -451,3 +451,91 @@ fn the_terminal_tab_explains_why_there_is_no_shell() {
     assert!(terminal_screen(TerminalState::NotAvailable).contains("needs an SFTP connection"));
     assert!(terminal_screen(TerminalState::Closed).contains("Opening the shell"));
 }
+
+#[test]
+fn the_help_overlay_lists_the_keys_of_every_context() {
+    let app = connected_app();
+    let mut ui = synced(100, 30, &app);
+    ui.help = Some(0);
+    insta::assert_snapshot!("help", draw(&ui, &app));
+    ui.help = Some(crate::help_view::max_scroll(30));
+    let end = draw(&ui, &app);
+    assert!(
+        end.contains("Terminal tab"),
+        "the last section is reachable by scrolling"
+    );
+    assert!(end.contains("Ctrl-\\ F12"));
+}
+
+#[test]
+fn the_status_line_follows_the_focus_and_a_notice_replaces_it() {
+    use crate::ui_state::{BottomTab, Focus};
+    use filecargo_app_core::prelude::{Level, Notice, NoticeId};
+    let app = connected_app();
+    let mut ui = synced(100, 30, &app);
+    let status =
+        |ui: &crate::ui_state::UiState, app| draw(ui, app).lines().last().unwrap().to_owned();
+    ui.focus = Focus::Local;
+    let files = status(&ui, &app);
+    assert!(
+        files.contains("F5 upload") && files.contains("F1 help"),
+        "{files}"
+    );
+    ui.focus = Focus::Tree;
+    assert!(status(&ui, &app).contains("n new"));
+    ui.focus = Focus::Bottom;
+    ui.bottom.tab = BottomTab::Terminal;
+    assert!(status(&ui, &app).contains("Ctrl-\\ leave"));
+    let mut noisy = connected_app();
+    noisy.notices = vec![Notice {
+        id: NoticeId(1),
+        level: Level::Error,
+        text: "Upload failed".into(),
+    }];
+    let line = status(&ui, &noisy);
+    assert!(line.contains("Upload failed (any key dismisses)"), "{line}");
+    assert!(!line.contains("F1 help"));
+}
+
+#[test]
+fn no_color_means_no_color_anywhere_even_in_dialogs_and_prompts() {
+    use filecargo_app_core::prelude::*;
+    use ratatui::style::Color;
+    let mut app = connected_app();
+    app.queue = std::sync::Arc::new(crate::test_support::busy_queue());
+    app.notices = vec![Notice {
+        id: NoticeId(1),
+        level: Level::Warning,
+        text: "careful".into(),
+    }];
+    app.prompt = Some(Prompt {
+        id: PromptId(1),
+        kind: PromptKind::Message {
+            level: Level::Error,
+            title: "Oops".into(),
+            body: "It broke".into(),
+        },
+    });
+    let mut ui = synced(100, 30, &app);
+    ui.color = false;
+    ui.dialog = Some(crate::dialog::Dialog::Site(Box::new(
+        crate::dialog::SiteEditor::new_site(None),
+    )));
+    for tab in crate::ui_state::BottomTab::ALL {
+        ui.bottom.tab = tab;
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
+        terminal
+            .draw(|frame| crate::view::render(frame, &ui, &app))
+            .unwrap();
+        for cell in &terminal.backend().buffer().content {
+            assert!(
+                matches!(cell.fg, Color::Reset) && matches!(cell.bg, Color::Reset),
+                "{tab:?}: {:?} has colors {:?}/{:?}",
+                cell.symbol(),
+                cell.fg,
+                cell.bg
+            );
+        }
+    }
+}

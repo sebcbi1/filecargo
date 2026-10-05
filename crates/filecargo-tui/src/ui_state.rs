@@ -133,6 +133,8 @@ pub struct UiState {
     /// The app's prompt on show (it sits above any dialog).
     pub prompt: Option<PromptSlot>,
     pub bottom: BottomUi,
+    /// The help overlay, with its scroll offset, while open.
+    pub help: Option<usize>,
     /// The app's log, read when the Log tab draws.
     pub log: LogBuffer,
     pub local: PaneUi,
@@ -159,6 +161,7 @@ impl UiState {
             dialog: None,
             prompt: None,
             bottom: BottomUi::default(),
+            help: None,
             log: LogBuffer::new(),
             local: PaneUi::default(),
             remote: PaneUi::default(),

@@ -62,7 +62,10 @@ pub fn render(frame: &mut Frame, ui: &UiState, app: &AppState) {
         render_pane(frame, areas.remote, Focus::Remote, ui, app, &look);
     }
     crate::bottom_view::render(frame, areas.bottom, ui, app, &look);
-    frame.render_widget(Paragraph::new(" q quit  Tab focus"), areas.status);
+    render_status(frame, areas.status, ui, app, &look);
+    if let Some(scroll) = ui.help {
+        crate::help_view::render(frame, area, scroll, &look);
+    }
     if let Some(dialog) = &ui.dialog {
         crate::dialog_view::render(frame, area, dialog, &look);
     }
@@ -320,4 +323,26 @@ fn render_tree(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, look
         lines.push(Line::styled(text, style));
     }
     frame.render_widget(Paragraph::new(lines), inner);
+}
+
+/// The newest notice (any key dismisses it), else the hints for the focused area.
+fn render_status(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, look: &Look) {
+    let line = match app.notices.last() {
+        Some(notice) => {
+            let color = match notice.level {
+                Level::Info => Color::Reset,
+                Level::Warning => Color::Yellow,
+                Level::Error => Color::Red,
+            };
+            Line::styled(
+                format!(" {} (any key dismisses)", notice.text),
+                look.tint(color).add_modifier(Modifier::BOLD),
+            )
+        }
+        None => Line::styled(
+            crate::help::status_hints(ui),
+            Style::new().add_modifier(Modifier::DIM),
+        ),
+    };
+    frame.render_widget(Paragraph::new(line), area);
 }
