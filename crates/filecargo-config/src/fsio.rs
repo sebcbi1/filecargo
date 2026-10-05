@@ -43,7 +43,8 @@ pub(crate) fn rename(from: &Path, to: &Path) -> Result<(), ConfigError> {
 }
 
 /// Writes `bytes` to `path` atomically: temp file in the same directory, fsync, rename.
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
+/// Re-exported as [`crate::atomic_write`] for the other modules (the transfer queue file).
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(dir).map_err(io_err(dir))?;
     let file_name = path

@@ -11,6 +11,7 @@ mod store;
 mod tree;
 
 pub use error::{ConfigError, ImportError, ValidationError};
+pub use fsio::write_atomic as atomic_write;
 pub use import::{
     ImportOptions, ImportReport, PasswordNotImported, SkippedSite, default_filezilla_path,
 };

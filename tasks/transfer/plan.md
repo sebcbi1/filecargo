@@ -34,7 +34,7 @@ T1 model + persistence ── T2 scheduler + single file ── T3 directories �
 
 ## Task List
 ### Phase 1: Core path
-- [ ] T1: Crate scaffold, model types, `queue.json` load/save, `config::atomic_write` export (S)
+- [x] T1: Crate scaffold, model types, `queue.json` load/save, `config::atomic_write` export (S)
 - [ ] T2: Scheduler + workers, single-file upload/download, snapshot + `Changed` (M)
 - [ ] T3: Directory items (lazy expansion, merge), 1,000-file round trip (M)
 ### Checkpoint A: files and trees move correctly (AC1)
@@ -69,3 +69,9 @@ None. Retry count (2) and back-off (2 s, 10 s) are constants in v1, not settings
 
 ## Hand-off Notes
 _Appended per task during implementation._
+
+### T1 Scaffold, model, persistence (done)
+- `config::atomic_write` is now exported (`fsio::write_atomic` made `pub` and re-exported), as the spec requested.
+- `QueueItem` gained a pub field **`conflict: Option<ConflictRule>`** (the per-item rule from `NewTransfer`, needed after a restart); spec updated. `ItemState` carries `#[allow(clippy::large_enum_variant)]` (two `Entry` values in `AwaitingDecision`).
+- `queue.json` (`store.rs`): `{ "version": 1, "next_id", "items": [...] }`; `RemotePath` is stored as a string and an item whose remote path no longer parses is dropped with the rest loaded; an item whose **local path is not UTF-8** is not saved (warning) rather than failing the whole save. `next_id` is raised above any loaded id. Corrupt / newer-version → `queue.json.bak-<unix-secs>`, warning, empty queue.
+- 8 unit tests (every state shape, Active/Awaiting → Pending with offset, Completed dropped, corrupt, version 2, invalid remote path, id reuse).
