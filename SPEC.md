@@ -50,14 +50,16 @@ Servers, folders and settings are shared: a site added in one UI exists in the o
 | Module id | Responsibility | Depends on | Spec | Status |
 |---|---|---|---|---|
 | `config` | Server tree (folders + sites), settings, TOML persistence, keychain secrets, FileZilla import | — | [SPEC-config.md](SPEC-config.md) | done (awaiting final review) |
-| `remote-fs` | Async filesystem trait (list, stat, ranged read/write, rename, delete, mkdir, chmod) + **local**, **FTP/FTPS**, **SFTP** backends; connect, auth, host-key / TLS-cert verification | `config` | — | not started |
-| `transfer` | Queue engine: pending/active/completed/failed, N concurrent workers, recursion, resume, conflict rules, progress events, queue persistence | `remote-fs`, `config` | — | not started |
-| `terminal` | PTY shell channel on the SFTP session's SSH connection; VT parsing into a screen grid both UIs render | `remote-fs` | — | not started |
-| `app-core` | UI-agnostic app state + commands: session, pane state, server-tree ops, log bus, event stream: the single API both front-ends drive | `config`, `remote-fs`, `transfer`, `terminal` | — | not started |
-| `tui` | ratatui front-end → bin `filecargo-tui` | `app-core` | — | not started |
-| `gui` | gpui front-end → bin `filecargo` | `app-core` | — | not started |
+| `remote-fs` | Async filesystem trait (list, stat, ranged read/write, rename, delete, mkdir, chmod) + **local**, **FTP/FTPS**, **SFTP** backends; connect, auth, host-key / TLS-cert verification | `config` | [SPEC-remote-fs.md](SPEC-remote-fs.md) | spec drafted |
+| `transfer` | Queue engine: pending/active/completed/failed, N concurrent workers, recursion, resume, conflict rules, progress events, queue persistence | `remote-fs`, `config` | [SPEC-transfer.md](SPEC-transfer.md) | spec drafted |
+| `terminal` | PTY shell channel on the SFTP session's SSH connection; VT parsing into a screen grid both UIs render | `remote-fs` | [SPEC-terminal.md](SPEC-terminal.md) | spec drafted |
+| `app-core` | UI-agnostic app state + commands: session, pane state, server-tree ops, log bus, event stream: the single API both front-ends drive | `config`, `remote-fs`, `transfer`, `terminal` | [SPEC-app-core.md](SPEC-app-core.md) | spec drafted |
+| `tui` | ratatui front-end → bin `filecargo-tui` | `app-core` | [SPEC-tui.md](SPEC-tui.md) | spec drafted |
+| `gui` | gpui front-end → bin `filecargo` | `app-core` | [SPEC-gui.md](SPEC-gui.md) | spec drafted |
 
 **Build order:** `config` → `remote-fs` → `transfer`, `terminal` (parallel) → `app-core` → `tui` → `gui`
+
+**Start gates** (from the module plans): `transfer` after remote-fs Checkpoint A · `terminal` after remote-fs Checkpoint B · `app-core` after transfer Checkpoint B + terminal complete · `tui` after app-core Checkpoint C · `gui` after tui Checkpoint B
 
 Each module runs Specify → Plan → Tasks → Implement in order. Contracts between modules live
 in the **provider** module's spec. Module ids are stable; never rename them.
@@ -79,7 +81,7 @@ Versions verified on crates.io on 2026-10-05. Crates marked † are pinned **exa
 | Errors / logs | `thiserror` (libs), `anyhow` (bins), `tracing` | latest at scaffold | |
 | TUI | `ratatui` + `crossterm` + `tui-tree-widget` | 0.30.2 / 0.29.0 / 0.24.1 | |
 | GUI | `gpui-kit` † (re-exports GPUI as `gpui-pre =0.3.8`) | 0.7.1 | **never** also depend on crates.io `gpui` or a zed git checkout (type mismatch) |
-| GUI ↔ tokio | gpui_tokio-style bridge (≈80 lines, copied pattern from Zed) | — | tokio runtime as a gpui Global; tasks abort on drop |
+| GUI ↔ core | none needed: app-core owns its tokio runtime, and the GUI awaits `tokio::sync::watch` on gpui's executor | — | verified 2026-10-05: tokio::sync is runtime-agnostic and gpui-pre has no tokio dependency |
 | Test-only | `tempfile`, `proptest`, `insta` | latest at scaffold | |
 
 Prior art used as **reference only** (not dependencies): termscp, `remotefs-*` crates (no PTY over the same SSH session; young 1.0 rewrite), Zed's `terminal_view`, `gpui-terminal`.
@@ -88,7 +90,7 @@ Prior art used as **reference only** (not dependencies): termscp, `remotefs-*` c
 - **suppaftp #93**: the FTPS data connection does not reuse the control connection's TLS session. Servers that require session reuse (vsftpd `require_ssl_reuse=YES`, which is its default; FileZilla Server) reject transfers. **v1 decision:** detect the rejection and fail with a clear, actionable error ("server requires TLS session reuse, not supported yet"). No fork or patch in v1. Main test servers run with `require_ssl_reuse=NO`; one extra server with `YES` asserts the error.
 - **gpui / gpui-kit churn**: pre-1.0, weekly releases with breaking changes. Pin exactly, bump deliberately (ask first).
 - **GUI platform deps**: macOS 15+ and Xcode CLT; Linux needs Vulkan + wayland/x11 dev packages; Windows needs MSVC + CMake.
-- **gpui-kit DataTable** has single selection only. Multi-select of file rows may need a custom list in the GUI pane (decide in `SPEC-gui`).
+- **gpui-kit DataTable** has single selection only. **Resolved in `SPEC-gui`:** multi-select lives in the table delegate, a workaround verified in research.
 
 ## Commands
 
@@ -124,7 +126,8 @@ filecargo/
 ├── mise.toml                  # toolchain: rust stable
 ├── .cargo/config.toml         # aliases (`cargo it`)
 ├── .github/workflows/ci.yml   # CI matrix (see Testing Strategy)
-├── tasks/                     # plan.md + todo.md for the module in progress (agent-skills convention)
+├── tasks/                     # plans (agent-skills convention): plan.md + todo.md = config;
+│                              #   tasks/<module-id>/{plan.md,todo.md} for every later module
 ├── SPEC.md                    # this file (project spec + capability map)
 ├── SPEC-<module-id>.md        # one per module, written in build order
 ├── crates/
@@ -193,8 +196,8 @@ Conventions:
 
 **CI (GitHub Actions, `.github/workflows/ci.yml`)**, on push and PR:
 - **check** job, matrix `macos-latest` / `ubuntu-latest` / `windows-latest`: `cargo fmt --all --check`, clippy (`-D warnings`), `cargo test` (default members, no GUI)
-- **gui** job, same matrix (added when `filecargo-gui` exists): `cargo build -p filecargo-gui` with platform deps installed (Linux: Vulkan + wayland/x11 dev packages)
-- **integration** job, `ubuntu-latest` only (needs Docker): compose up → `cargo it` (added when `remote-fs` lands)
+- **gui** job, same matrix (added in gui T1): `cargo build -p filecargo-gui` + `cargo test -p filecargo-gui`, with Linux deps `libfontconfig-dev libfreetype-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev libvulkan1 mesa-vulkan-drivers`
+- **integration** job, `ubuntu-latest` only (needs Docker): compose up → `cargo it` (added in remote-fs T3)
 - `Swatinem/rust-cache` for build caching; toolchain via `jdx/mise-action` so CI uses the same `mise.toml`
 
 - All tests use temp dirs (`FILECARGO_CONFIG_DIR`) and `MemoryStore` secrets; **never** the real config dir, real keychain, or real servers.

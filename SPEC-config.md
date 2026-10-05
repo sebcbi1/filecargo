@@ -202,6 +202,9 @@ impl ConfigStore {
 8. FileZilla fixture (nested folders, SFTP+key, FTPS explicit, anonymous FTP, base64 password, crypt password, S3 site) imports with the exact expected tree and report.
 9. `FILECARGO_CONFIG_DIR` override is honored; all tests run against temp dirs, never the real config dir or real keychain.
 
+## Exports used by other modules
+- `pub fn atomic_write(path, bytes)`: the same temp-file + fsync + rename used for config files. Requested by `transfer` for `queue.json` (added in transfer T1).
+
 ## Out of scope (v1)
 Live file watching (other instance's edits appear on next write or explicit `reload()`),
 per-site charset, proxy settings, export to FileZilla format, settings UI layout (front-end modules).
