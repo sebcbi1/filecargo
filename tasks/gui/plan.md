@@ -60,3 +60,14 @@ None. Drag and drop is explicitly post-v1.
 
 ## Hand-off Notes
 _Appended per task during implementation._
+
+### Build environment (all tasks)
+- GPUI needs system libraries at build time. On NixOS use the repo's `shell.nix`: `nix-shell --run "cargo test -p filecargo-gui"` (other Linux: the apt list in the CI job; macOS / Windows need nothing extra). `cargo build` / `cargo test` without `-p filecargo-gui` never compile gpui (the crate is not a default member; the CI `check` job excludes it).
+- Headless tests need no display: gpui-kit's `test-support` runs on gpui's test platform.
+
+### T1 Platform skeleton + CI (done)
+- Crate = lib `filecargo_gui` + bin `filecargo`. `main`: `App::start`, `gpui_kit::application().with_assets(AllAssets)` (the default `Assets` lacks the Upload / Download / Trash / Pencil icons we need), `gpui_kit::init`, **`Theme::sync_system_appearance(None, cx)` right after** (`init` forces the light theme), `secondary-q` → `Quit` action → `Command::Quit` (the window closes when the app has really quit, so a "transfers running" confirmation can intervene), `open_window` with `Workspace`.
+- `AppModel` entity holds `Arc<AppState>` + the `AppHandle`; a foreground task refreshes it and `cx.notify()`s; `Workspace` observes it. **Deviation:** the task polls `watch::has_changed()` every 33 ms instead of awaiting `changed()`: gpui's deterministic test scheduler panics when a task is woken from another thread (the app-core thread), so awaiting would make the tests unable to run the production path. app-core publishes ≤ 30 snapshots/s anyway. The channel closing (app quit) ends the task and quits gpui.
+- `Workspace`: toolbar strip, `h_resizable` (tree 220 px, 160–480) with three areas, `v_resizable` body / bottom panel (220 px), all placeholders for now; `renders` counter for tests.
+- CI: new `gui` job (ubuntu with the apt libs / macos / windows: clippy, build, test); the `check` job now excludes `filecargo-gui`; `actionlint` clean, **not run on GitHub**. `shell.nix` for NixOS.
+- Tests (`tests/window.rs`, harness in `tests/support/mod.rs`: real app-core on a temp dir, gpui test window with `Root`): window opens, a new snapshot re-renders (AC1 i, ii), theme switch re-renders (AC5).

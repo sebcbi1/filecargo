@@ -37,9 +37,9 @@ vt100 = "=0.16.2"
 ratatui = { version = "0.30.2", features = ["crossterm_0_29"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 futures-util = "0.3"
-tui-tree-widget = "0.24.1"
 tui-term = "0.3.4"
 anyhow = "1"
+gpui-kit = "=0.7.1"
 insta = "1"
 sha2 = "0.10"
 russh = { version = "=0.64.1", default-features = false, features = ["ring", "rsa", "flate2"] }
