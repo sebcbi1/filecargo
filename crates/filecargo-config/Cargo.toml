@@ -1,0 +1,17 @@
+[package]
+name = "filecargo-config"
+description = "Server tree, settings, secrets and FileZilla import for filecargo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+etcetera.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
