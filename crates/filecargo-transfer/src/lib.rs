@@ -1,5 +1,6 @@
 //! The transfer queue: scheduling, conflict rules, resume, retry and persistence.
 
+mod conflict;
 mod error;
 mod model;
 mod queue;

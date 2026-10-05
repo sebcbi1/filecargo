@@ -39,7 +39,7 @@ T1 model + persistence ── T2 scheduler + single file ── T3 directories �
 - [x] T3: Directory items (lazy expansion, merge), 1,000-file round trip (M)
 ### Checkpoint A: files and trees move correctly (AC1) — reached
 ### Phase 2: Robustness
-- [ ] T4: Conflict rules + `Ask` / `resolve` / `apply_to_all` (M)
+- [x] T4: Conflict rules + `Ask` / `resolve` / `apply_to_all` (M)
 - [ ] T5: Resume, automatic retry with back-off, manual retry/remove/cancel, `FlakyFs` (M)
 - [ ] T6: Progress rate/ETA, 10 Hz throttle, mtime preservation (S)
 ### Checkpoint B: AC2, AC3, AC6, AC7 green
@@ -90,3 +90,11 @@ _Appended per task during implementation._
 - Skipped with a log line: symlinks, special files, and **unsafe names** (`safe_name`: exactly one normal path component, no `/`, `\`, NUL, `.`/`..`, no drive prefixes), so a hostile server cannot make a download write outside its target.
 - AC1 verified for both directions: 1,000 files over 50 directories (5 × (1 + 9)), SHA-256 of every file and the directory list equal, peak concurrency ≤ 4. 1,051 `ItemFinished` events (files + 50 dirs + root); `completed` correctly stays capped at 1,000.
 - `Harness` counts `ItemFinished` events (`finished_ok` / `finished_failed`) while waiting for `Idle`. 8 tree tests + 1 unit test.
+
+### T4 Conflict rules (done)
+- `conflict.rs`: `decide(rule, source, target) -> Decision` (pure, unit-tested incl. unknown times) and `numbered_name` (`report.txt` → `report (1).txt`, `archive.tar.gz` → `archive.tar (1).gz`, `.profile` → `.profile (1)`). The worker stats both ends first; a missing target is no conflict, a **partial file we wrote** (`transferred > 0`, target no larger than the source) is resumed without consulting the rule, a target that outgrew the source restarts from 0.
+- `Ask` → `JobResult::NeedsDecision` → the item becomes `AwaitingDecision`, `ConflictAsked` is emitted and the worker slot is free for other items. `Queue::resolve` + `ConflictDecision { rule, apply_to_all }`. Rule precedence: the owner's answer for that item → the item's own rule → the queue default; an `Ask` falls back to the `apply_to_all` override, which lives until the queue is empty (`Idle`).
+- **Race found by the tests and fixed:** an item already running with rule `Ask` when the owner answers "apply to all" would report its conflict afterwards and ask again; the scheduler now applies the override to such a late `NeedsDecision` instead of asking.
+- `Rename` makes the item **follow its new name** (`ProgressCell::retarget`, applied by the scheduler on completion or failure), so a retry resumes the renamed partial instead of conflicting again. The existing file is never touched.
+- The snapshot is published right before `ConflictAsked`, so event and snapshot agree (otherwise it would be up to 100 ms stale).
+- 9 integration tests (each rule in both directions, newer/older/equal times, resume shorter/equal/longer, rename (1)/(2), ask with other items continuing, apply-to-all for the next and the already-waiting conflicts, `Ask` answers ignored) + 4 unit tests.

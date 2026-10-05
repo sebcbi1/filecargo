@@ -10,7 +10,9 @@ use std::time::{Duration, SystemTime};
 use async_trait::async_trait;
 use filecargo_config::{Protocol, SiteId};
 use filecargo_remote_fs::{Capabilities, Entry, FsError, Progress, RemoteFs, RemotePath, RootedFs};
-use filecargo_transfer::{Connector, Queue, QueueEvent, QueueLimits, TransferError};
+use filecargo_transfer::{
+    ConflictInfo, Connector, Queue, QueueEvent, QueueLimits, TransferError, TransferId,
+};
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
@@ -179,6 +181,8 @@ pub struct Harness {
     /// `ItemFinished` events seen so far, successful and failed.
     pub finished_ok: usize,
     pub finished_failed: usize,
+    /// Every `ConflictAsked` seen so far.
+    pub conflicts: Vec<(TransferId, ConflictInfo)>,
 }
 
 impl Harness {
@@ -207,7 +211,29 @@ impl Harness {
             data,
             finished_ok: 0,
             finished_failed: 0,
+            conflicts: Vec::new(),
         }
+    }
+
+    /// Waits for the next conflict question.
+    pub async fn next_conflict(&mut self) -> (TransferId, ConflictInfo) {
+        let wait = async {
+            while let Some(event) = self.events.recv().await {
+                match event {
+                    QueueEvent::ConflictAsked { id, conflict } => {
+                        self.conflicts.push((id, conflict.clone()));
+                        return (id, conflict);
+                    }
+                    QueueEvent::ItemFinished { ok: true, .. } => self.finished_ok += 1,
+                    QueueEvent::ItemFinished { ok: false, .. } => self.finished_failed += 1,
+                    QueueEvent::Idle | QueueEvent::Changed => {}
+                }
+            }
+            panic!("the event channel closed before a conflict was asked");
+        };
+        tokio::time::timeout(Duration::from_secs(30), wait)
+            .await
+            .expect("no conflict was asked within 30 s")
     }
 
     /// Waits for the queue to go idle.
@@ -218,14 +244,23 @@ impl Harness {
                     QueueEvent::Idle => return,
                     QueueEvent::ItemFinished { ok: true, .. } => self.finished_ok += 1,
                     QueueEvent::ItemFinished { ok: false, .. } => self.finished_failed += 1,
+                    QueueEvent::ConflictAsked { id, conflict } => {
+                        self.conflicts.push((id, conflict))
+                    }
                     _ => {}
                 }
             }
             panic!("the event channel closed before the queue went idle");
         };
-        tokio::time::timeout(Duration::from_secs(60), wait)
+        if tokio::time::timeout(Duration::from_secs(20), wait)
             .await
-            .expect("the queue did not go idle within 60 s");
+            .is_err()
+        {
+            panic!(
+                "the queue did not go idle within 20 s; snapshot: {:#?}",
+                self.queue.snapshot()
+            );
+        }
     }
 }
 
@@ -307,4 +342,11 @@ pub fn tree_hashes(root: &Path) -> (std::collections::BTreeMap<String, String>, 
     walk(root, root, &mut files, &mut dirs);
     dirs.sort();
     (files, dirs)
+}
+
+/// Sets a file's modification time (seconds since the epoch).
+pub fn set_mtime(path: &Path, secs: u64) {
+    let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+    file.set_modified(std::time::UNIX_EPOCH + Duration::from_secs(secs))
+        .unwrap();
 }

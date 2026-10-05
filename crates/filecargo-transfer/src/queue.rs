@@ -147,6 +147,11 @@ impl Queue {
         ids
     }
 
+    /// Answers a [`QueueEvent::ConflictAsked`].
+    pub fn resolve(&self, id: TransferId, decision: ConflictDecision) {
+        self.send(Command::Resolve(id, decision));
+    }
+
     pub fn retry(&self, id: TransferId) {
         self.send(Command::Retry(id));
     }

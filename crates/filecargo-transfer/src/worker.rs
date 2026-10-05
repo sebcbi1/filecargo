@@ -1,13 +1,16 @@
 //! What happens to one item once it has a connection: the actual file I/O.
 
 use std::io::SeekFrom;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
+use filecargo_config::ConflictRule;
 use filecargo_remote_fs::{Entry, EntryKind, FsError, Progress, RemoteFs, RemotePath, local};
 use tokio::io::{AsyncSeekExt, BufReader, BufWriter};
 
-use crate::{Direction, Outcome, QueueItem, TransferError};
+use crate::conflict::{self, Decision};
+use crate::{ConflictInfo, Direction, Outcome, QueueItem, TransferError};
 
 /// Where an attempt is, shared between the worker (writer) and the scheduler (sampler).
 #[derive(Debug, Default)]
@@ -16,6 +19,15 @@ pub(crate) struct ProgressCell {
     offset: AtomicU64,
     /// Bytes moved by this attempt.
     written: AtomicU64,
+    /// Set when the `Rename` rule picked a new name for the target: the item must follow it,
+    /// so a retry resumes the renamed file instead of conflicting again.
+    retarget: Mutex<Option<Retarget>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Retarget {
+    pub local: PathBuf,
+    pub remote: RemotePath,
 }
 
 impl ProgressCell {
@@ -28,6 +40,17 @@ impl ProgressCell {
     pub(crate) fn transferred(&self) -> u64 {
         self.offset.load(Ordering::Relaxed) + self.written.load(Ordering::Relaxed)
     }
+
+    pub(crate) fn take_retarget(&self) -> Option<Retarget> {
+        self.retarget
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+    }
+
+    fn set_retarget(&self, retarget: Retarget) {
+        *self.retarget.lock().unwrap_or_else(|e| e.into_inner()) = Some(retarget);
+    }
 }
 
 impl Progress for ProgressCell {
@@ -38,6 +61,8 @@ impl Progress for ProgressCell {
 
 pub(crate) struct Job {
     pub item: QueueItem,
+    /// What to do if the target exists; `Ask` hands the question to the owner.
+    pub rule: ConflictRule,
     pub fs: Arc<dyn RemoteFs>,
     pub progress: Arc<ProgressCell>,
 }
@@ -45,20 +70,24 @@ pub(crate) struct Job {
 /// A child of a directory item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Child {
-    pub local: std::path::PathBuf,
+    pub local: PathBuf,
     pub remote: RemotePath,
     pub is_dir: bool,
     pub size: Option<u64>,
 }
 
+// Results are moved once per item; the size of `NeedsDecision` does not matter.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum JobResult {
     Completed(Outcome),
     /// The directory was created; its children go right after it in the queue.
     Expanded(Vec<Child>),
+    /// The target exists and the rule is `Ask`.
+    NeedsDecision(ConflictInfo),
     Failed(TransferError),
 }
 
-fn local_io(path: &std::path::Path, error: &std::io::Error) -> TransferError {
+fn local_io(path: &Path, error: &std::io::Error) -> TransferError {
     TransferError::LocalIo(format!("{}: {error}", path.display()))
 }
 
@@ -78,37 +107,156 @@ pub(crate) async fn run(job: Job) -> JobResult {
     result.unwrap_or_else(JobResult::Failed)
 }
 
-async fn run_file(job: &Job) -> Result<JobResult, TransferError> {
-    let item = &job.item;
-    job.progress.start_at(0);
-    match item.direction {
-        Direction::Upload => upload(job, 0).await,
-        Direction::Download => download(job, 0).await,
-    }
-    .map(|()| JobResult::Completed(Outcome::Transferred))
+/// The two ends of a file transfer: where it reads from and where it writes to.
+struct Ends {
+    source: Entry,
+    target: Option<Entry>,
 }
 
-async fn upload(job: &Job, offset: u64) -> Result<(), TransferError> {
+async fn stat_ends(
+    job: &Job,
+    target_local: &Path,
+    target_remote: &RemotePath,
+) -> Result<Ends, TransferError> {
     let item = &job.item;
-    let mut file = tokio::fs::File::open(&item.local)
+    match item.direction {
+        Direction::Upload => {
+            let source = local::stat(&item.local)
+                .await
+                .map_err(from_fs)?
+                .ok_or_else(|| {
+                    TransferError::LocalIo(format!("{}: no such file", item.local.display()))
+                })?;
+            let target = job.fs.stat(target_remote).await.map_err(from_fs)?;
+            Ok(Ends { source, target })
+        }
+        Direction::Download => {
+            let source = job
+                .fs
+                .stat(&item.remote)
+                .await
+                .map_err(from_fs)?
+                .ok_or_else(|| TransferError::Fs(FsError::NotFound(item.remote.to_string())))?;
+            let target = local::stat(target_local).await.map_err(from_fs)?;
+            Ok(Ends { source, target })
+        }
+    }
+}
+
+/// The first `name (n).ext` that does not exist at the target.
+async fn free_name(job: &Job) -> Result<String, TransferError> {
+    let item = &job.item;
+    let name = match item.direction {
+        Direction::Upload => item.remote.file_name().map(str::to_owned),
+        Direction::Download => item
+            .local
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned()),
+    }
+    .ok_or_else(|| TransferError::LocalIo("the target has no file name".to_owned()))?;
+    for n in 1..10_000 {
+        let candidate = conflict::numbered_name(&name, n);
+        let taken = match item.direction {
+            Direction::Upload => {
+                let parent = item.remote.parent().unwrap_or_else(RemotePath::root);
+                let path = parent
+                    .join(&candidate)
+                    .map_err(|e| TransferError::LocalIo(e.to_string()))?;
+                job.fs.stat(&path).await.map_err(from_fs)?.is_some()
+            }
+            Direction::Download => local::stat(&item.local.with_file_name(&candidate))
+                .await
+                .map_err(from_fs)?
+                .is_some(),
+        };
+        if !taken {
+            return Ok(candidate);
+        }
+    }
+    Err(TransferError::LocalIo(format!("no free name for {name}")))
+}
+
+async fn run_file(job: &Job) -> Result<JobResult, TransferError> {
+    let item = &job.item;
+    let (mut target_local, mut target_remote) = (item.local.clone(), item.remote.clone());
+    let ends = stat_ends(job, &target_local, &target_remote).await?;
+
+    let mut outcome = Outcome::Transferred;
+    let offset = match &ends.target {
+        None => 0,
+        // We wrote part of this file already: it is ours, not a conflict.
+        Some(target) if item.transferred > 0 => {
+            if target.size <= ends.source.size {
+                outcome = Outcome::Resumed;
+                target.size
+            } else {
+                tracing::info!(target: "filecargo::transfer", id = %item.id, "the partial target grew past the source; starting over");
+                0
+            }
+        }
+        Some(target) => match conflict::decide(job.rule, &ends.source, target) {
+            Decision::Write { offset } => {
+                if offset > 0 {
+                    outcome = Outcome::Resumed;
+                }
+                offset
+            }
+            Decision::Skip => return Ok(JobResult::Completed(Outcome::Skipped)),
+            Decision::Ask => {
+                return Ok(JobResult::NeedsDecision(ConflictInfo {
+                    source: ends.source,
+                    target: target.clone(),
+                }));
+            }
+            Decision::Rename => {
+                let name = free_name(job).await?;
+                match item.direction {
+                    Direction::Upload => {
+                        let parent = item.remote.parent().unwrap_or_else(RemotePath::root);
+                        target_remote = parent
+                            .join(&name)
+                            .map_err(|e| TransferError::LocalIo(e.to_string()))?;
+                    }
+                    Direction::Download => target_local = item.local.with_file_name(&name),
+                }
+                job.progress.set_retarget(Retarget {
+                    local: target_local.clone(),
+                    remote: target_remote.clone(),
+                });
+                outcome = Outcome::Renamed(name);
+                0
+            }
+        },
+    };
+
+    job.progress.start_at(offset);
+    match item.direction {
+        Direction::Upload => upload(job, &target_remote, offset).await?,
+        Direction::Download => download(job, &target_local, offset).await?,
+    }
+    Ok(JobResult::Completed(outcome))
+}
+
+async fn upload(job: &Job, target: &RemotePath, offset: u64) -> Result<(), TransferError> {
+    let path = &job.item.local;
+    let mut file = tokio::fs::File::open(path)
         .await
-        .map_err(|e| local_io(&item.local, &e))?;
+        .map_err(|e| local_io(path, &e))?;
     if offset > 0 {
         file.seek(SeekFrom::Start(offset))
             .await
-            .map_err(|e| local_io(&item.local, &e))?;
+            .map_err(|e| local_io(path, &e))?;
     }
     let mut reader = BufReader::with_capacity(256 * 1024, file);
     job.fs
-        .upload(&item.remote, offset, &mut reader, job.progress.as_ref())
+        .upload(target, offset, &mut reader, job.progress.as_ref())
         .await
         .map(|_| ())
         .map_err(from_fs)
 }
 
-async fn download(job: &Job, offset: u64) -> Result<(), TransferError> {
-    let item = &job.item;
-    if let Some(parent) = item.local.parent() {
+async fn download(job: &Job, target: &Path, offset: u64) -> Result<(), TransferError> {
+    if let Some(parent) = target.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|e| local_io(parent, &e))?;
@@ -119,17 +267,17 @@ async fn download(job: &Job, offset: u64) -> Result<(), TransferError> {
         options.truncate(true);
     }
     let mut file = options
-        .open(&item.local)
+        .open(target)
         .await
-        .map_err(|e| local_io(&item.local, &e))?;
+        .map_err(|e| local_io(target, &e))?;
     if offset > 0 {
         file.seek(SeekFrom::Start(offset))
             .await
-            .map_err(|e| local_io(&item.local, &e))?;
+            .map_err(|e| local_io(target, &e))?;
     }
     let mut writer = BufWriter::with_capacity(256 * 1024, file);
     job.fs
-        .download(&item.remote, offset, &mut writer, job.progress.as_ref())
+        .download(&job.item.remote, offset, &mut writer, job.progress.as_ref())
         .await
         .map(|_| ())
         .map_err(from_fs)

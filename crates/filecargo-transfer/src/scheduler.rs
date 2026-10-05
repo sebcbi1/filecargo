@@ -11,10 +11,12 @@ use tokio::task::AbortHandle;
 use tokio::time::Instant;
 
 use crate::queue::{
-    Connector, QueueEvent, QueueItemView, QueueLimits, QueueSnapshot, Shared, Totals,
+    ConflictDecision, Connector, QueueEvent, QueueItemView, QueueLimits, QueueSnapshot, Shared,
+    Totals,
 };
 use crate::worker::{self, Child, Job, JobResult, ProgressCell};
 use crate::{ItemState, NewTransfer, Outcome, QueueItem, TransferError, TransferId, store};
+use filecargo_config::ConflictRule;
 
 const COMPLETED_CAP: usize = 1_000;
 const IDLE_CONNECTION: Duration = Duration::from_secs(30);
@@ -23,6 +25,7 @@ const SAVE_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(crate) enum Command {
     Enqueue(Vec<(TransferId, NewTransfer)>),
+    Resolve(TransferId, ConflictDecision),
     Retry(TransferId),
     RetryAllFailed,
     Remove(TransferId),
@@ -52,6 +55,8 @@ struct Slot {
     item: QueueItem,
     /// Not before this instant (automatic retry back-off).
     retry_at: Option<Instant>,
+    /// The owner's answer to this item's conflict.
+    decided: Option<ConflictRule>,
 }
 
 impl Slot {
@@ -59,6 +64,7 @@ impl Slot {
         Self {
             item,
             retry_at: None,
+            decided: None,
         }
     }
 }
@@ -99,6 +105,8 @@ struct Scheduler {
     completed: VecDeque<QueueItem>,
     active: HashMap<TransferId, Running>,
     pool: Vec<Idle>,
+    /// An `apply_to_all` answer: used instead of asking until the queue is empty.
+    override_rule: Option<ConflictRule>,
 
     changed: bool,
     last_event: Instant,
@@ -136,6 +144,7 @@ impl Scheduler {
             completed: VecDeque::new(),
             active: HashMap::new(),
             pool: Vec::new(),
+            override_rule: None,
             changed: true,
             last_event: now.checked_sub(EVENT_INTERVAL).unwrap_or(now),
             persist_dirty: false,
@@ -173,6 +182,7 @@ impl Scheduler {
     async fn handle(&mut self, command: Command) -> bool {
         match command {
             Command::Enqueue(items) => self.enqueue(items),
+            Command::Resolve(id, decision) => self.resolve(id, decision),
             Command::Retry(id) => self.retry(id),
             Command::RetryAllFailed => {
                 let ids: Vec<_> = self.failed.iter().map(|s| s.item.id).collect();
@@ -221,6 +231,29 @@ impl Scheduler {
         self.touch(true);
     }
 
+    fn resolve(&mut self, id: TransferId, decision: ConflictDecision) {
+        if decision.rule == ConflictRule::Ask {
+            tracing::warn!(target: "filecargo::transfer", %id, "ignoring a conflict answer of `ask`");
+            return;
+        }
+        let waiting = |s: &Slot| matches!(s.item.state, ItemState::AwaitingDecision { .. });
+        if decision.apply_to_all {
+            self.override_rule = Some(decision.rule);
+            for slot in self.pending.iter_mut().filter(|s| waiting(s)) {
+                slot.decided = Some(decision.rule);
+                slot.item.state = ItemState::Pending;
+            }
+        } else if let Some(slot) = self
+            .pending
+            .iter_mut()
+            .find(|s| s.item.id == id && waiting(s))
+        {
+            slot.decided = Some(decision.rule);
+            slot.item.state = ItemState::Pending;
+        }
+        self.touch(true);
+    }
+
     fn retry(&mut self, id: TransferId) {
         let Some(index) = self.failed.iter().position(|s| s.item.id == id) else {
             return;
@@ -246,6 +279,20 @@ impl Scheduler {
 
     // ---- scheduling -----------------------------------------------------------------------
 
+    /// The rule for an item: the owner's answer, else the item's own, else the queue default;
+    /// an `Ask` becomes the `apply_to_all` answer when there is one.
+    fn effective_rule(&self, slot: &Slot) -> ConflictRule {
+        let base = slot
+            .decided
+            .or(slot.item.conflict)
+            .unwrap_or(self.limits.default_conflict);
+        if base == ConflictRule::Ask {
+            self.override_rule.unwrap_or(ConflictRule::Ask)
+        } else {
+            base
+        }
+    }
+
     fn start_ready(&mut self) {
         if !self.processing {
             return;
@@ -262,6 +309,7 @@ impl Scheduler {
     }
 
     fn start(&mut self, index: usize) {
+        let rule = self.effective_rule(&self.pending[index]);
         let slot = &mut self.pending[index];
         slot.retry_at = None;
         slot.item.state = ItemState::Active {
@@ -297,6 +345,7 @@ impl Scheduler {
             };
             let result = worker::run(Job {
                 item,
+                rule,
                 fs: fs.clone(),
                 progress: job_progress,
             })
@@ -328,6 +377,10 @@ impl Scheduler {
         };
         let transferred = running.progress.transferred();
         self.pending[index].item.transferred = transferred;
+        if let Some(retarget) = running.progress.take_retarget() {
+            self.pending[index].item.local = retarget.local;
+            self.pending[index].item.remote = retarget.remote;
+        }
 
         let site = self.pending[index].item.site;
         let keep = |this: &mut Self, conn: Option<Arc<dyn RemoteFs>>| {
@@ -343,6 +396,23 @@ impl Scheduler {
             JobResult::Completed(outcome) => {
                 keep(self, conn);
                 self.complete(index, outcome);
+            }
+            JobResult::NeedsDecision(conflict) => {
+                keep(self, conn);
+                if let Some(rule) = self.override_rule {
+                    // The owner answered "apply to all" while this item was already running:
+                    // use that answer, do not ask again.
+                    let slot = &mut self.pending[index];
+                    slot.decided = Some(rule);
+                    slot.item.state = ItemState::Pending;
+                } else {
+                    self.pending[index].item.state = ItemState::AwaitingDecision {
+                        conflict: conflict.clone(),
+                    };
+                    // events and snapshot must agree for a question the owner will act on
+                    self.publish_snapshot();
+                    let _ = self.events.send(QueueEvent::ConflictAsked { id, conflict });
+                }
             }
             JobResult::Expanded(children) => {
                 keep(self, conn);
@@ -452,6 +522,7 @@ impl Scheduler {
         let idle_now = self.pending.is_empty() && self.active.is_empty();
         if idle_now && !self.was_idle {
             self.was_idle = true;
+            self.override_rule = None;
             self.persist_dirty = true;
             self.publish();
             let _ = self.events.send(QueueEvent::Idle);
@@ -492,9 +563,15 @@ impl Scheduler {
         wake
     }
 
+    /// Publishes the snapshot and counts as the `Changed` notification.
     fn publish(&mut self) {
         self.changed = false;
         self.last_event = Instant::now();
+        self.publish_snapshot();
+    }
+
+    /// Publishes the snapshot only; a `Changed` event still follows within 100 ms.
+    fn publish_snapshot(&mut self) {
         let view = |item: &QueueItem| QueueItemView {
             item: item.clone(),
             rate: None,
