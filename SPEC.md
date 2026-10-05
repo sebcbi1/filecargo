@@ -54,7 +54,7 @@ Servers, folders and settings are shared: a site added in one UI exists in the o
 | `transfer` | Queue engine: pending/active/completed/failed, N concurrent workers, recursion, resume, conflict rules, progress events, queue persistence | `remote-fs`, `config` | [SPEC-transfer.md](SPEC-transfer.md) | done (awaiting final review) |
 | `terminal` | PTY shell channel on the SFTP session's SSH connection; VT parsing into a screen grid both UIs render | `remote-fs` | [SPEC-terminal.md](SPEC-terminal.md) | done (awaiting final review) |
 | `app-core` | UI-agnostic app state + commands: session, pane state, server-tree ops, log bus, event stream: the single API both front-ends drive | `config`, `remote-fs`, `transfer`, `terminal` | [SPEC-app-core.md](SPEC-app-core.md) | done (awaiting final review) |
-| `tui` | ratatui front-end → bin `filecargo-tui` | `app-core` | [SPEC-tui.md](SPEC-tui.md) | spec drafted |
+| `tui` | ratatui front-end → bin `filecargo-tui` | `app-core` | [SPEC-tui.md](SPEC-tui.md) | done (awaiting final review) |
 | `gui` | gpui front-end → bin `filecargo` | `app-core` | [SPEC-gui.md](SPEC-gui.md) | spec drafted |
 
 **Build order:** `config` → `remote-fs` → `transfer`, `terminal` (parallel) → `app-core` → `tui` → `gui`
@@ -79,7 +79,7 @@ Versions verified on crates.io on 2026-10-05. Crates marked † are pinned **exa
 | Secrets | `keyring-core` + native stores | 1.0 | macOS Keychain, Windows Credential Manager, Linux Secret Service |
 | Config | `etcetera` + `toml` + `serde` | 0.11.0 / 1.1.6 / 1 | `directories` is archived; not used |
 | Errors / logs | `thiserror` (libs), `anyhow` (bins), `tracing` | latest at scaffold | |
-| TUI | `ratatui` + `crossterm` + `tui-tree-widget` | 0.30.2 / 0.29.0 / 0.24.1 | |
+| TUI | `ratatui` + `crossterm` (the server tree is drawn by the crate itself) | 0.30.2 / 0.29.0 | |
 | GUI | `gpui-kit` † (re-exports GPUI as `gpui-pre =0.3.8`) | 0.7.1 | **never** also depend on crates.io `gpui` or a zed git checkout (type mismatch) |
 | GUI ↔ core | none needed: app-core owns its tokio runtime, and the GUI awaits `tokio::sync::watch` on gpui's executor | — | verified 2026-10-05: tokio::sync is runtime-agnostic and gpui-pre has no tokio dependency |
 | Test-only | `tempfile`, `proptest`, `insta` | latest at scaffold | |

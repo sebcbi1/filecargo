@@ -1,6 +1,6 @@
 # Implementation Plan: `tui` module
 
-> Spec: [SPEC-tui.md](../../SPEC-tui.md) · Tasks: [todo.md](todo.md) · Status: **awaiting review** · 2026-10-05
+> Spec: [SPEC-tui.md](../../SPEC-tui.md) · Tasks: [todo.md](todo.md) · Status: **implemented, awaiting final review** · 2026-10-05
 > Starts after `app-core` Checkpoint C. It is the first consumer of the app-core API, so API friction found here is fixed in app-core (spec first) before the GUI starts.
 
 ## Overview
@@ -34,12 +34,12 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 - [x] T3: Server tree (`tui-tree-widget`), tree bindings, connect/disconnect, remote pane (M)
 - [x] T4: Form toolkit + site editor (new/edit) + new folder/rename/move/delete dialogs (M)
 - [x] T5: Prompt dialogs for every `PromptKind` + chmod, go-to-path, import dialogs (M)
-### Checkpoint B: connect to a site with password + host-key prompt, browse, and edit sites, all in the binary
+### Checkpoint B: connect to a site with password + host-key prompt, browse, and edit sites, all in the binary — reached (automated: `tests/e2e_sftp.rs`)
 ### Phase 3: Transfers, log, terminal, polish
 - [x] T6: Bottom panel: Queue / Completed / Failed / Log tabs, progress bars, queue bindings, transfer bindings in panes (M)
 - [x] T7: Terminal tab (`tui-term`), key mapping to `terminal::Key`, focus escape, scrollback keys (S)
-- [ ] T8: Help overlay from keymap, status line, mouse (wheel + click focus), `NO_COLOR`, complete snapshot suite, `SMOKE.md` + manual smoke on 3 OSes (M)
-### Checkpoint C: all 6 AC green, CI green, smoke checklist done, human review
+- [x] T8: Help overlay from keymap, status line, mouse (wheel + click focus), `NO_COLOR`, complete snapshot suite, `SMOKE.md` + manual smoke on 3 OSes (M)
+### Checkpoint C: all 6 AC green, CI green, smoke checklist done, human review — AC green locally; CI not run on GitHub; smoke on 3 OSes and the human review are pending
 
 ## AC Traceability
 AC1 → T2–T8 (each task adds its rows of the binding table) · AC2 → T2–T8 (snapshots per screen) · AC3 → T2 · AC4 → T7 · AC5 → T1 · AC6 → T8
@@ -115,3 +115,35 @@ _Appended per task during implementation._
 - View: `tui_term::widget::PseudoTerminal` over `TerminalHandle::with_screen` (colours, bold, cursor), an "↑ N lines back · type to return" badge while scrolled, placeholders for "needs an SFTP connection" / "Opening the shell…".
 - Tests: 3 key-mapping, 8 reducer (open once / re-arm, escapes, mode-aware encoding, scroll, resize, exited, paste, no-shell), 3 view (open screen with colours and cursor, exited, placeholders). The shell is a `FakeShell` (`filecargo_terminal::spawn` over in-memory channels).
 - Also: `app-core/tests/quit.rs` waited 5 s for the app to end and flaked when the machine was busy compiling; widened to 20 s.
+
+### T8 Polish and verification (done) → Checkpoints B and C reached locally (human review, CI and the 3-OS smoke pending)
+- **Help overlay** (`help.rs`, `help_view.rs`): `F1` / `?` open it; its rows are generated from `keymap::BINDINGS` (one heading per context, rows without a label share the row above), scrolls with `Up/Down/PgUp/PgDn/Home/End`/wheel, `Esc` / `F1` / `?` / `q` close it. While it is open it takes every key.
+- **Status line**: hints per focused area (and per bottom tab) built from the same table through `help::key_of(action)`, so a rebinding changes the hint. The newest **notice** replaces the hints (`Warning` yellow, `Error` red) and **any key press dismisses all notices on show** (`Command::DismissNotice`), then is handled normally.
+- **Mouse** (`reducer::mouse_event`): wheel scrolls the area under the pointer by 3 rows (panes, tree, queue lists, log, help; the terminal tab → `TerminalScroll`), without moving the focus; a left click focuses an area and selects the row under the pointer (header and empty space select nothing) or switches the bottom tab whose title was hit (`bottom_view::tab_at`). Ignored while a prompt or dialog is up. No double-click, no drag.
+- **`NO_COLOR`**: a test draws every bottom tab with a site editor, a prompt and a notice open and asserts that no cell has a foreground or background colour.
+- **Snapshot suite**: 100×30 snapshots for every screen listed in AC2, plus 80×24 snapshots of the busiest ones (`small_*`: transfer, host-key and conflict prompts, site editor, help, terminal).
+- **Automated Checkpoint B** — `tests/e2e_sftp.rs` (feature `integration`, part of `cargo it` and the CI integration job): the real reducer, view and app core driven by keystrokes against the Docker SFTP server, no terminal needed: create a site in the editor (password masked, remembered), connect, the host-key prompt (`Enter` does *not* answer, `y` does), the remote pane appears and takes the focus, `F7` mkdir, open it, upload (`F5`), the Completed tab, `F2` rename, download back, `F8` delete with confirmation, the shell tab (`echo fc-marker-$((6*7))` → `fc-marker-42` on screen), `Ctrl-\`, cleanup, `q`. ~1 s.
+- **`SMOKE.md`**: the manual checklist (AC6) with a results table; only the automated/pseudo-terminal rows are filled in — macOS Terminal/iTerm2, a real Linux terminal and Windows Terminal are **pending a human**.
+- Also run by hand: the real binary on a `script` pseudo-terminal opens the help with `F1` and quits cleanly (exit 0).
+
+### Acceptance criteria → tests
+| AC | Covered by |
+|---|---|
+| 1 binding table rows | `keymap` table tests (`every_key_of_every_binding_resolves…`, `the_spec_table_rows_all_have_bindings`, no duplicate keys per context) + the reducer test modules (`tests`, `dialog_tests`, `prompt_tests`, `bottom_tests`, `terminal_tests`, `polish_tests`) |
+| 2 snapshots | `src/view_tests.rs` + `src/snapshots/` (100×30 and `small_*` at 80×24) |
+| 3 selection survives refresh, resets on navigation | `reducer::tests` (T2) |
+| 4 terminal keys / `Ctrl-\` | `reducer::terminal_tests`, `keys::tests`, `tests/e2e_sftp.rs` |
+| 5 panic restores the terminal | `tests/panic.rs` |
+| 6 manual smoke | `SMOKE.md` (automated rows done; 3-OS rows pending) |
+
+### Deviations from SPEC-tui.md (for the reviewer)
+- The server tree is a plain list over a flattened `ServerTree`, not `tui-tree-widget` (T3).
+- Queue keys: `r` retry the failed item, `R` retry all failed, `C` clear completed, `p` pause, `Del` / `d` remove (the spec's "R retry (Failed: all with Shift-R)" was self-contradictory). Extra vi-style keys: `h j k l` next to the arrows.
+- Trust prompts (host key, certificate) have **no default key**: `y` once, `a` always, `n` / `Esc` reject.
+- Conflict prompt keys: `o` overwrite, `n` if newer, `r` resume, `s` skip, `k` keep both, `a` toggles apply-to-all, `Esc` skips.
+- `--config-dir` sets `StartOptions.paths` (no `set_var`; the workspace forbids `unsafe`).
+- Validation errors of the site editor are produced by the editor itself (inline), not by app-core's `Message` prompt; app-core's tree errors (e.g. duplicate names) still arrive as a prompt.
+- File times are shown in UTC.
+- Mouse: no double-click and no drag; terminal tab wheel scrolls the scrollback.
+- Dev-dependencies (tests only) on `filecargo-config`, `filecargo-remote-fs` and `filecargo-terminal`: fixtures and the in-memory fake shell. The normal dependency stays `app-core` only.
+- Coverage (`cargo llvm-cov -p filecargo-tui`, unit and snapshot tests only): **92.9 % lines** (reducer 95 %, views 91–100 %, forms 98 %); `main.rs` and `app_loop.rs` (0 %) are exercised by `tests/e2e_sftp.rs` (reducer + view, not the loop) and the pseudo-terminal runs, not by the unit run.

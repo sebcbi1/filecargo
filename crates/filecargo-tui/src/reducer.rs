@@ -2104,7 +2104,7 @@ mod bottom_tests {
             ["QueueSetProcessing(true)"]
         );
         assert_eq!(
-            debug(&on_event(&mut ui, &app, ch('c'))),
+            debug(&on_event(&mut ui, &app, ch('C'))),
             ["QueueClearCompleted"]
         );
         assert_eq!(
@@ -2584,5 +2584,88 @@ mod polish_tests {
         }));
         on_event(&mut ui, &app, click(70, 4));
         assert_eq!(ui.focus, Focus::Local);
+    }
+}
+
+#[cfg(test)]
+mod binding_table_tests {
+    use ratatui::crossterm::event::KeyEvent;
+
+    use crate::keymap::{BINDINGS, lookup_exact};
+
+    /// A concrete key press for a key spec (shifted letters arrive as capitals).
+    fn press(spec: &crate::keymap::KeySpec) -> KeyEvent {
+        KeyEvent::new(spec.code, spec.mods)
+    }
+
+    #[test]
+    fn every_key_of_every_binding_resolves_to_that_binding_in_its_context() {
+        let mut checked = 0;
+        for binding in BINDINGS {
+            for key in binding.keys {
+                assert_eq!(
+                    lookup_exact(binding.context, press(key)),
+                    Some(binding.action),
+                    "{:?} in {:?} ({})",
+                    key.code,
+                    binding.context,
+                    binding.help
+                );
+                checked += 1;
+            }
+        }
+        assert!(checked > 90, "{checked} keys checked");
+    }
+
+    #[test]
+    fn the_spec_table_rows_all_have_bindings() {
+        // the rows of SPEC-tui.md's "Key bindings" table, by help text fragment per context
+        let wanted = [
+            "focus the next area",
+            "focus the previous area",
+            "this help",
+            "refresh the focused pane",
+            "bottom tab: Queue",
+            "show / hide the server tree",
+            "maximize / restore the bottom panel",
+            "quit",
+            "expand / collapse a folder",
+            "connect to a site",
+            "new site",
+            "new folder",
+            "edit the site",
+            "rename",
+            "duplicate the site",
+            "move to a folder",
+            "delete the site or folder",
+            "import a FileZilla",
+            "disconnect",
+            "parent folder",
+            "select / unselect",
+            "invert the selection",
+            "select all",
+            "transfer the selection",
+            "new remote folder",
+            "rename (remote)",
+            "delete (remote)",
+            "change permissions",
+            "show / hide dotfiles",
+            "cycle the sort order",
+            "go to a path",
+            "retry the failed item",
+            "remove the item",
+            "clear the completed list",
+            "pause / resume the queue",
+            "scroll the log",
+            "follow the newest line",
+            "leave the terminal",
+            "scroll back through the output",
+        ];
+        for fragment in wanted {
+            assert!(
+                BINDINGS.iter().any(|b| b.help.contains(fragment)),
+                "no binding for {fragment:?}"
+            );
+        }
     }
 }

@@ -195,7 +195,7 @@ pub static BINDINGS: &[Binding] = &[
     Binding { context: C::Queue, keys: &[plain(KeyCode::Delete), ch('d')], label: "Del d", action: A::QueueRemove, help: "remove the item (cancels it when running)" },
     Binding { context: C::Queue, keys: &[ch('r')], label: "r", action: A::QueueRetry, help: "retry the failed item" },
     Binding { context: C::Queue, keys: &[ch('R')], label: "R", action: A::QueueRetryAll, help: "retry every failed item" },
-    Binding { context: C::Queue, keys: &[ch('c')], label: "c", action: A::QueueClear, help: "clear the completed list" },
+    Binding { context: C::Queue, keys: &[ch('C')], label: "C", action: A::QueueClear, help: "clear the completed list" },
     // ---- log ----------------------------------------------------------------------------------
     Binding { context: C::Log, keys: &[plain(KeyCode::Up), ch('k')], label: "Up Down", action: A::Up, help: "scroll the log" },
     Binding { context: C::Log, keys: &[plain(KeyCode::Down), ch('j')], label: "", action: A::Down, help: "" },

@@ -30,5 +30,9 @@ filecargo-remote-fs.workspace = true
 filecargo-terminal.workspace = true
 tempfile.workspace = true
 
+[features]
+# Drives the whole TUI (reducer + view, no terminal) against the Docker SFTP server in tests/docker.
+integration = []
+
 [lints]
 workspace = true

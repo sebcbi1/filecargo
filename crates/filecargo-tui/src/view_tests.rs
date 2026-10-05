@@ -539,3 +539,60 @@ fn no_color_means_no_color_anywhere_even_in_dialogs_and_prompts() {
         }
     }
 }
+
+/// The main screens at the smallest supported size: nothing may overflow or panic.
+#[tokio::test]
+async fn the_main_screens_fit_in_80_by_24() {
+    use crate::dialog::{Dialog, SiteEditor};
+    use crate::test_support::FakeShell;
+    use crate::ui_state::{BottomTab, Focus};
+    use filecargo_app_core::prelude::*;
+
+    let small = |app: &AppState| synced(80, 24, app);
+
+    let mut app = connected_app();
+    app.queue = std::sync::Arc::new(crate::test_support::busy_queue());
+    let mut ui = small(&app);
+    ui.focus = Focus::Bottom;
+    insta::assert_snapshot!("small_transfer", draw(&ui, &app));
+
+    let mut prompted = connected_app();
+    prompted.prompt = Some(Prompt {
+        id: PromptId(1),
+        kind: PromptKind::HostKey(HostKeyPrompt {
+            host: "example.org".into(),
+            port: 22,
+            algorithm: "ssh-ed25519".into(),
+            fingerprint: "SHA256:uV3ZkP0xvQhmY1d1fGkTt6l4mqWb8rJwq0h5cG9nZ2A".into(),
+        }),
+    });
+    insta::assert_snapshot!("small_host_key", draw(&small(&prompted), &prompted));
+    prompted.prompt = Some(Prompt {
+        id: PromptId(2),
+        kind: PromptKind::Conflict {
+            transfer: TransferId(1),
+            conflict: ConflictInfo {
+                source: crate::test_support::entry("index.php", false, 4400, 2),
+                target: crate::test_support::entry("index.php", false, 3900, 40),
+            },
+        },
+    });
+    insta::assert_snapshot!("small_conflict", draw(&small(&prompted), &prompted));
+
+    let plain = connected_app();
+    let mut ui = small(&plain);
+    ui.dialog = Some(Dialog::Site(Box::new(SiteEditor::new_site(None))));
+    insta::assert_snapshot!("small_site_editor", draw(&ui, &plain));
+
+    let mut ui = small(&plain);
+    ui.help = Some(0);
+    insta::assert_snapshot!("small_help", draw(&ui, &plain));
+
+    let shell = FakeShell::open(78, 6, "me@prod:~$ htop\r\n").await;
+    let mut with_shell = connected_app();
+    with_shell.terminal = TerminalState::Open(shell.view.clone());
+    let mut ui = small(&with_shell);
+    ui.bottom.tab = BottomTab::Terminal;
+    ui.focus = Focus::Bottom;
+    insta::assert_snapshot!("small_terminal", draw(&ui, &with_shell));
+}

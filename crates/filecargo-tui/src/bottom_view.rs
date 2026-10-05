@@ -313,7 +313,7 @@ fn render_completed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState,
     };
     frame.render_widget(
         Paragraph::new(Span::styled(
-            "c clear the list",
+            "C clear the list",
             Style::new().add_modifier(Modifier::DIM),
         )),
         line,
