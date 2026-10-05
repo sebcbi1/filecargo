@@ -119,6 +119,45 @@ impl Workspace {
                         }
                     })),
             )
+            .child(
+                Button::new("new-site")
+                    .small()
+                    .icon(IconName::Plus)
+                    .label("New site")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        let folder = this.tree.read(cx).target_folder(cx);
+                        crate::dialogs::site_editor::open(
+                            this.model.clone(),
+                            None,
+                            folder,
+                            window,
+                            cx,
+                        );
+                    })),
+            )
+            .child(
+                Button::new("new-folder")
+                    .small()
+                    .icon(IconName::FolderClosed)
+                    .label("New folder")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        let parent = this.tree.read(cx).target_folder(cx);
+                        crate::dialogs::tree_ops::new_folder(
+                            this.model.clone(),
+                            parent,
+                            window,
+                            cx,
+                        );
+                    })),
+            )
+            .child(
+                Button::new("import")
+                    .small()
+                    .label("Import…")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        crate::dialogs::tree_ops::import(this.model.clone(), window, cx);
+                    })),
+            )
             .child(div().flex_1())
             .child(
                 div()
@@ -173,6 +212,7 @@ impl Render for Workspace {
 /// The key bindings of the whole application.
 pub fn bind_keys(cx: &mut gpui_kit::App) {
     use crate::pane::{OpenRow, ParentDir, RefreshPane, SelectAllRows};
+    use crate::tree::{DeleteSelected, EditSelected, RenameSelected};
     use gpui_kit::KeyBinding;
     cx.bind_keys([
         KeyBinding::new("secondary-q", Quit, None),
@@ -180,5 +220,8 @@ pub fn bind_keys(cx: &mut gpui_kit::App) {
         KeyBinding::new("backspace", ParentDir, Some("FilePane")),
         KeyBinding::new("secondary-a", SelectAllRows, Some("FilePane")),
         KeyBinding::new("secondary-r", RefreshPane, Some("FilePane")),
+        KeyBinding::new("f2", RenameSelected, Some("ServerTree")),
+        KeyBinding::new("delete", DeleteSelected, Some("ServerTree")),
+        KeyBinding::new("secondary-e", EditSelected, Some("ServerTree")),
     ]);
 }

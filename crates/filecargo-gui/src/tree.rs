@@ -9,8 +9,8 @@ use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::tree::{Tree, TreeEvent, TreeItem, TreeState};
 use gpui_kit::component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex};
 use gpui_kit::{
-    AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, Styled as _,
-    Subscription, Window, px,
+    AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
+    Render, Styled as _, Subscription, Window, div, px,
 };
 
 use crate::model::AppModel;
@@ -138,12 +138,13 @@ impl Render for ServerTreeView {
         let menu_model = self.model.clone();
         let menu_nodes = self.nodes.clone();
         let menu_session = session.clone();
+        let menu_tree = self.model.read(cx).state.servers.clone();
         let colors = (
             cx.theme().success,
             cx.theme().muted_foreground,
             cx.theme().danger,
         );
-        Tree::new(&self.state, move |ix, entry, selected, _window, _cx| {
+        let tree = Tree::new(&self.state, move |ix, entry, selected, _window, _cx| {
             let node = nodes.get(entry.item().id.as_ref()).copied();
             let (icon, color) = match node {
                 Some(NodeId::Folder(_)) => (
@@ -190,24 +191,174 @@ impl Render for ServerTreeView {
                 })
         })
         .context_menu(move |_ix, entry, menu: PopupMenu, _window, _cx| {
-            let Some(NodeId::Site(site)) = menu_nodes.get(entry.item().id.as_ref()).copied() else {
+            let Some(node) = menu_nodes.get(entry.item().id.as_ref()).copied() else {
                 return menu;
             };
-            let connected =
-                matches!(&menu_session, SessionState::Connected { site: s, .. } if *s == site);
-            let connect = menu_model.clone();
-            let disconnect = menu_model.clone();
-            let menu = menu.item(PopupMenuItem::new("Connect").on_click(move |_, _, cx| {
-                connect.update(cx, |model, _| model.send(Command::Connect(site)));
-            }));
-            if connected {
-                menu.item(PopupMenuItem::new("Disconnect").on_click(move |_, _, cx| {
-                    disconnect.update(cx, |model, _| model.send(Command::Disconnect));
-                }))
-            } else {
-                menu
-            }
+            node_menu(
+                menu,
+                node,
+                entry.item().label.to_string(),
+                &menu_session,
+                &menu_model,
+                &menu_tree,
+            )
         })
-        .size_full()
+        .size_full();
+        div()
+            .id("server-tree")
+            .key_context("ServerTree")
+            .size_full()
+            .on_action(cx.listener(|this, _: &RenameSelected, window, cx| {
+                if let Some((node, name)) = this.selected_info(cx) {
+                    crate::dialogs::tree_ops::rename(this.model.clone(), node, &name, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &DeleteSelected, window, cx| {
+                if let Some((node, name)) = this.selected_info(cx) {
+                    crate::dialogs::tree_ops::delete(this.model.clone(), node, &name, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &EditSelected, window, cx| {
+                if let Some((NodeId::Site(id), _)) = this.selected_info(cx)
+                    && let Some(site) = this.model.read(cx).state.servers.site(id).cloned()
+                {
+                    crate::dialogs::site_editor::open(
+                        this.model.clone(),
+                        Some(site),
+                        None,
+                        window,
+                        cx,
+                    );
+                }
+            }))
+            .child(tree)
+    }
+}
+
+type MenuAction = Box<dyn Fn(&mut Window, &mut gpui_kit::App)>;
+
+/// The right-click menu of a row.
+fn node_menu(
+    menu: PopupMenu,
+    node: NodeId,
+    name: String,
+    session: &SessionState,
+    model: &Entity<AppModel>,
+    tree: &Arc<ServerTree>,
+) -> PopupMenu {
+    use crate::dialogs::{site_editor, tree_ops};
+    let item = |label: &'static str, run: MenuAction| {
+        PopupMenuItem::new(label).on_click(move |_, window, cx| run(window, cx))
+    };
+    let mut menu = menu;
+    match node {
+        NodeId::Site(site) => {
+            let connected =
+                matches!(session, SessionState::Connected { site: s, .. } if *s == site);
+            let m = model.clone();
+            menu = menu.item(item(
+                "Connect",
+                Box::new(move |_, cx| m.update(cx, |m, _| m.send(Command::Connect(site)))),
+            ));
+            if connected {
+                let m = model.clone();
+                menu = menu.item(item(
+                    "Disconnect",
+                    Box::new(move |_, cx| m.update(cx, |m, _| m.send(Command::Disconnect))),
+                ));
+            }
+            menu = menu.separator();
+            if let Some(original) = tree.site(site).cloned() {
+                let m = model.clone();
+                menu = menu.item(item(
+                    "Edit…",
+                    Box::new(move |window, cx| {
+                        site_editor::open(m.clone(), Some(original.clone()), None, window, cx);
+                    }),
+                ));
+            }
+            let m = model.clone();
+            menu = menu.item(item(
+                "Duplicate",
+                Box::new(move |_, cx| {
+                    m.update(cx, |m, _| m.send(Command::Tree(TreeOp::Duplicate { site })))
+                }),
+            ));
+        }
+        NodeId::Folder(folder) => {
+            let m = model.clone();
+            menu = menu.item(item(
+                "New site here…",
+                Box::new(move |window, cx| {
+                    site_editor::open(m.clone(), None, Some(folder), window, cx);
+                }),
+            ));
+            let m = model.clone();
+            menu = menu.item(item(
+                "New folder here…",
+                Box::new(move |window, cx| {
+                    tree_ops::new_folder(m.clone(), Some(folder), window, cx);
+                }),
+            ));
+            menu = menu.separator();
+        }
+    }
+    let (m, n) = (model.clone(), name.clone());
+    menu = menu.item(item(
+        "Rename…",
+        Box::new(move |window, cx| {
+            tree_ops::rename(m.clone(), node, &n, window, cx);
+        }),
+    ));
+    let m = model.clone();
+    menu = menu.item(item(
+        "Move to…",
+        Box::new(move |window, cx| {
+            tree_ops::move_to(m.clone(), node, window, cx);
+        }),
+    ));
+    let m = model.clone();
+    menu.separator().item(item(
+        "Delete…",
+        Box::new(move |window, cx| tree_ops::delete(m.clone(), node, &name, window, cx)),
+    ))
+}
+
+gpui_kit::actions!(
+    filecargo_tree,
+    [RenameSelected, DeleteSelected, EditSelected]
+);
+
+impl ServerTreeView {
+    /// The selected node and its name.
+    pub fn selected_info(&self, cx: &gpui_kit::App) -> Option<(NodeId, String)> {
+        let tree = self.model.read(cx).state.servers.clone();
+        match self.selected? {
+            NodeId::Site(id) => tree.site(id).map(|s| (NodeId::Site(id), s.name.clone())),
+            NodeId::Folder(id) => tree
+                .folder(id)
+                .map(|f| (NodeId::Folder(id), f.name.clone())),
+        }
+    }
+
+    /// Where a new site or folder goes: the selected folder, or the folder of the selected site.
+    pub fn target_folder(&self, cx: &gpui_kit::App) -> Option<FolderId> {
+        match self.selected? {
+            NodeId::Folder(id) => Some(id),
+            NodeId::Site(id) => self
+                .model
+                .read(cx)
+                .state
+                .servers
+                .site(id)
+                .and_then(|s| s.folder),
+        }
+    }
+}
+
+impl ServerTreeView {
+    /// How many nodes (folders and sites) the tree holds.
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
     }
 }
