@@ -50,8 +50,8 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 ## Task List (details in [todo.md](todo.md))
 
 ### Phase 1: Foundation
-- [ ] T1: Workspace scaffold + `Paths` (S)
-- [ ] T2: GitHub Actions CI, `check` job matrix (XS)
+- [x] T1: Workspace scaffold + `Paths` (S)
+- [x] T2: GitHub Actions CI, `check` job matrix (XS)
 
 ### Checkpoint A: Foundation
 - [ ] `cargo build`, `cargo test`, fmt, clippy clean locally; CI file validated
