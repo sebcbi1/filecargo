@@ -16,6 +16,11 @@ tracing.workspace = true
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
+sha2.workspace = true
+
+[features]
+# Contract tests against the Docker servers in tests/docker (see `cargo it`).
+integration = []
 
 [lints]
 workspace = true
