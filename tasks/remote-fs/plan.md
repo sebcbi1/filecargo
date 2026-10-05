@@ -51,7 +51,7 @@ T3 docker servers + CI integration job ─────────────�
 - [x] T4: Connect plumbing (`ConnectContext`, `Prompter`, `SessionTrust`, `Session`, `ConnectError`), SFTP transport + host-key verification (M)
 - [x] T5: SFTP auth: password / keyboard-interactive with lookup order, remember and retry-once; key file incl. encrypted; agent (M)
 - [x] T6: SFTP `RemoteFs` over russh-sftp; contract suite green on docker `sftp`; keepalive (M)
-- [ ] T7: `ShellOpener` / `ShellChannel` with a draining pump and resize (S)
+- [x] T7: `ShellOpener` / `ShellChannel` with a draining pump and resize (S)
 ### Checkpoint B: AC3, AC4, AC7, AC8 + contract (SFTP) green
 ### Phase 3: FTP / FTPS
 - [ ] T8: FTP connection, login, `TYPE I`, FEAT/UTF8, MLSD parser + LIST fallback, metadata ops, serialized control connection (M)
@@ -124,3 +124,9 @@ _Appended per task during implementation._
 - Errors from `File` reads/writes arrive as `io::Error` wrapping the sftp error; `map_io` downcasts it to keep `NotFound` / `PermissionDenied` / `Timeout`.
 - `list` order: russh-sftp reverses the READDIR chunk order, so "server order" holds only within a chunk. Owner/group stay `None`.
 - Throughput over loopback docker with defaults (16 in-flight requests, 32 KiB writes): ~54 MB/s up, ~37 MB/s down for 20 MB. Not tuned further; revisit if `transfer` shows a bottleneck.
+
+### T7 Shell channel (done)  → Checkpoint B reached
+- `ShellOpener::open(term, cols, rows)` (PTY + shell on the **same** `Handle`, waits for the server's pty/shell replies) returns `ShellChannel { input, output }`. `Session` now has `shell: Option<ShellOpener>` (`Some` for SFTP). Types are re-exported at the crate root.
+- The pump task drains the channel unconditionally (stdout and stderr both become `ShellOutput::Data`), sends `Exit(status)` then `Closed` last. `ShellInput::Close` (or dropping the input sender) sends EOF + close.
+- Verified: exit status 3 propagates; `stty size` follows `Resize`; 4 MB of unread output does not stall SFTP; **one TCP connection** is asserted client-side by counting this process's established sockets to :2222 through `/proc` (own test binary, Linux only), including after a second shell.
+- Checkpoint B: AC3, AC4, AC7, AC8 and the SFTP contract suite are green (`cargo it`: 54 integration tests + 29 unit tests); fmt and clippy clean.

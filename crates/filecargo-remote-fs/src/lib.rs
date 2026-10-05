@@ -18,4 +18,5 @@ pub use fs::{NoProgress, Progress, RemoteFs};
 pub use local::RootedFs;
 pub use path::{PathError, RemotePath};
 pub use prompt::{CredentialAnswer, CredentialPrompt, HostKeyPrompt, Prompter, TrustDecision};
+pub use sftp::{ShellChannel, ShellInput, ShellOpener, ShellOutput};
 pub use trust::SessionTrust;

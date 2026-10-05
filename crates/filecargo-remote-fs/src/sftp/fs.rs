@@ -11,7 +11,7 @@ use russh_sftp::client::{Config as SftpConfig, SftpSession};
 use russh_sftp::protocol::{FileAttributes, FileType, OpenFlags, StatusCode};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWrite, AsyncWriteExt};
 
-use super::SshConnection;
+use super::{ShellOpener, SshConnection};
 use crate::{
     Capabilities, ConnectContext, ConnectError, Entry, EntryKind, FsError, Progress, RemoteFs,
     RemotePath,
@@ -111,6 +111,10 @@ fn to_entry(name: String, attrs: &Metadata, symlink_target: Option<String>) -> E
 }
 
 impl SftpFs {
+    pub fn shell_opener(&self) -> ShellOpener {
+        ShellOpener::new(self.conn.clone())
+    }
+
     async fn symlink_target(&self, path: &str) -> Option<String> {
         self.sftp.read_link(path).await.ok()
     }

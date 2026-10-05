@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use filecargo_config::{ConnectionSettings, Paths, Protocol, SecretStore, Site};
 
-use crate::{FsError, Prompter, RemoteFs, RemotePath, SessionTrust};
+use crate::{FsError, Prompter, RemoteFs, RemotePath, SessionTrust, ShellOpener};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConnectError {
@@ -88,6 +88,8 @@ pub struct SessionInfo {
 pub struct Session {
     pub fs: Arc<dyn RemoteFs>,
     pub info: SessionInfo,
+    /// `Some` for SFTP only.
+    pub shell: Option<ShellOpener>,
 }
 
 /// Connects to `site`, prompting through `ctx.prompter` when a decision is needed.
@@ -103,6 +105,7 @@ pub async fn connect(site: &Site, ctx: &ConnectContext) -> Result<Session, Conne
                     tls: None,
                     home,
                 },
+                shell: Some(sftp.shell_opener()),
                 fs: Arc::new(sftp),
             })
         }
