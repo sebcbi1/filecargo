@@ -59,7 +59,7 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState
         BottomTab::Completed => render_completed(frame, inner, ui, app, look),
         BottomTab::Failed => render_failed(frame, inner, ui, app, look),
         BottomTab::Log => render_log(frame, inner, ui, look),
-        BottomTab::Terminal => frame.render_widget(Paragraph::new("Terminal"), inner),
+        BottomTab::Terminal => render_terminal(frame, inner, app, look),
     }
 }
 
@@ -393,5 +393,70 @@ fn render_log(frame: &mut Frame, area: Rect, ui: &UiState, look: &Look) {
         empty(frame, area, "The log is empty.");
     } else {
         frame.render_widget(Paragraph::new(lines), area);
+    }
+}
+
+fn draw_screen(frame: &mut Frame, area: Rect, view: &TerminalView) {
+    view.handle.with_screen(|screen| {
+        frame.render_widget(tui_term::widget::PseudoTerminal::new(screen), area);
+        let back = screen.scrollback();
+        if back > 0 {
+            let label = format!(" ↑ {back} lines back · type to return ");
+            let width = label.chars().count() as u16;
+            if area.width > width {
+                let at = Rect {
+                    x: area.x + area.width - width,
+                    y: area.y,
+                    width,
+                    height: 1,
+                };
+                frame.render_widget(
+                    Paragraph::new(Span::styled(
+                        label,
+                        Style::new().add_modifier(Modifier::REVERSED),
+                    )),
+                    at,
+                );
+            }
+        }
+    });
+}
+
+fn render_terminal(frame: &mut Frame, area: Rect, app: &AppState, look: &Look) {
+    match &app.terminal {
+        TerminalState::Open(view) => draw_screen(frame, area, view),
+        TerminalState::Exited { code, view } => {
+            draw_screen(
+                frame,
+                Rect {
+                    height: area.height.saturating_sub(1),
+                    ..area
+                },
+                view,
+            );
+            let status = match code {
+                Some(code) => {
+                    format!("Shell exited (status {code}). Enter to reopen · Ctrl-\\ to leave")
+                }
+                None => "Shell ended. Enter to reopen · Ctrl-\\ to leave".to_owned(),
+            };
+            let line = Rect {
+                y: area.y + area.height - 1,
+                height: 1,
+                ..area
+            };
+            frame.render_widget(
+                Paragraph::new(Span::styled(status, look.tint(Color::Yellow))),
+                line,
+            );
+        }
+        TerminalState::Closed => empty(frame, area, "Opening the shell…"),
+        TerminalState::NotAvailable => {
+            empty(
+                frame,
+                area,
+                "The terminal needs an SFTP connection (FTP has no shell).",
+            );
+        }
     }
 }

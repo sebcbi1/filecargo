@@ -28,5 +28,5 @@ pub use filecargo_transfer::{
 };
 // terminal
 pub use filecargo_terminal::{
-    Key, Modes, Mods, Screen, TermSize, TermStatus, TerminalHandle, encode,
+    Key, Modes, Mods, Screen, TermSize, TermStatus, TerminalHandle, encode, paste_bytes,
 };

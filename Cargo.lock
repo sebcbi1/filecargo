@@ -1294,6 +1294,8 @@ dependencies = [
  "crossterm",
  "filecargo-app-core",
  "filecargo-config",
+ "filecargo-remote-fs",
+ "filecargo-terminal",
  "futures-util",
  "insta",
  "ratatui",

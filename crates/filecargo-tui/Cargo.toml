@@ -26,6 +26,8 @@ tui-term.workspace = true
 [dev-dependencies]
 insta.workspace = true
 filecargo-config.workspace = true
+filecargo-remote-fs.workspace = true
+filecargo-terminal.workspace = true
 tempfile.workspace = true
 
 [lints]

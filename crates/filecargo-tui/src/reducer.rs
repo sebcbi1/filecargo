@@ -1,7 +1,7 @@
 //! Pure key handling: `(UiState, AppState, Event) -> Commands`. No I/O, no terminal.
 
 use filecargo_app_core::prelude::*;
-use ratatui::crossterm::event::{KeyEvent, MouseEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
 use crate::dialog::{
@@ -9,6 +9,7 @@ use crate::dialog::{
 };
 use crate::dialog_util::{ChmodDialog, ImportDialog};
 use crate::keymap::{self, Action, Context};
+use crate::keys::to_terminal_key;
 use crate::layout;
 use crate::pane::{PaneView, pane_view};
 use crate::prompt_ui::{PromptSlot, PromptUi};
@@ -734,6 +735,90 @@ fn scroll_log(ui: &mut UiState, action: Action) {
     ui.bottom.log_follow = ui.bottom.log_scroll == 0;
 }
 
+/// Cells of the shell: the bottom panel inside its border.
+fn terminal_size(ui: &UiState) -> (u16, u16) {
+    let area = layout::areas(
+        Rect::new(0, 0, ui.size.0, ui.size.1),
+        ui.tree_visible(),
+        ui.maximize_bottom,
+    )
+    .bottom;
+    (
+        area.width.saturating_sub(2).max(1),
+        area.height.saturating_sub(2).max(1),
+    )
+}
+
+/// Opens the shell the first time the tab shows and keeps its size in step with the panel.
+/// The loop calls this after every sync.
+pub fn housekeeping(ui: &mut UiState, app: &AppState) -> Vec<Command> {
+    let on_tab = ui.bottom.tab == BottomTab::Terminal;
+    let size = terminal_size(ui);
+    match &app.terminal {
+        TerminalState::Closed if on_tab && !ui.bottom.term_open_sent => {
+            ui.bottom.term_open_sent = true;
+            ui.bottom.term_size = Some(size);
+            vec![Command::TerminalOpen {
+                cols: size.0,
+                rows: size.1,
+            }]
+        }
+        TerminalState::Closed if !on_tab => {
+            ui.bottom.term_open_sent = false;
+            Vec::new()
+        }
+        TerminalState::Open(_) => {
+            ui.bottom.term_open_sent = false;
+            if ui.bottom.term_size == Some(size) {
+                Vec::new()
+            } else {
+                ui.bottom.term_size = Some(size);
+                vec![Command::TerminalResize {
+                    cols: size.0,
+                    rows: size.1,
+                }]
+            }
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Keys on the terminal tab: only the escape keys and `Alt-digit` are ours, the rest is the
+/// shell's (including `Tab`, `Esc` and `q`).
+fn terminal_key(ui: &mut UiState, app: &AppState, key: KeyEvent) -> Vec<Command> {
+    let page = i32::from(terminal_size(ui).1.saturating_sub(1).max(1));
+    match keymap::lookup_exact(Context::Terminal, key) {
+        Some(Action::TerminalEscape) => {
+            ui.focus = if app.remote.is_some() {
+                Focus::Remote
+            } else {
+                Focus::Local
+            };
+            return Vec::new();
+        }
+        Some(Action::TerminalScrollUp) => return vec![Command::TerminalScroll(page)],
+        Some(Action::TerminalScrollDown) => return vec![Command::TerminalScroll(-page)],
+        _ => {}
+    }
+    if let Some(Action::BottomTab(index)) = keymap::lookup(Context::Global, key)
+        && let Some(tab) = BottomTab::from_index(index)
+    {
+        select_tab(ui, tab);
+        return Vec::new();
+    }
+    match &app.terminal {
+        TerminalState::Open(view) => to_terminal_key(key)
+            .map(|(k, m)| Command::TerminalInput(view.handle.encode_key(k, m)))
+            .into_iter()
+            .collect(),
+        TerminalState::Exited { .. } if key.code == KeyCode::Enter => {
+            let (cols, rows) = terminal_size(ui);
+            vec![Command::TerminalOpen { cols, rows }]
+        }
+        _ => Vec::new(),
+    }
+}
+
 pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> {
     match event {
         Event::Resize(width, height) => {
@@ -748,6 +833,12 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
                 .is_some_and(|p| app.prompt.as_ref().is_some_and(|a| a.id == p.id))
             {
                 return prompt_key(ui, app, key);
+            }
+            if ui.dialog.is_none()
+                && ui.focus == Focus::Bottom
+                && ui.bottom.tab == BottomTab::Terminal
+            {
+                return terminal_key(ui, app, key);
             }
             if ui.dialog.is_some() {
                 return dialog_key(ui, key);
@@ -810,6 +901,13 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
             }
             if let Some(dialog) = ui.dialog.as_mut() {
                 dialog.paste(&text);
+                return Vec::new();
+            }
+            if ui.focus == Focus::Bottom
+                && ui.bottom.tab == BottomTab::Terminal
+                && let TerminalState::Open(view) = &app.terminal
+            {
+                return vec![Command::TerminalInput(view.handle.paste_bytes(&text))];
             }
             Vec::new()
         }
@@ -1925,5 +2023,219 @@ mod bottom_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod terminal_tests {
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+    use super::*;
+    use crate::test_support::{FakeShell, app, connected_app, synced};
+
+    fn press(code: KeyCode, mods: KeyModifiers) -> Event {
+        Event::Key(KeyEvent::new(code, mods))
+    }
+
+    fn plain(code: KeyCode) -> Event {
+        press(code, KeyModifiers::NONE)
+    }
+
+    fn debug(commands: &[Command]) -> Vec<String> {
+        commands.iter().map(|c| format!("{c:?}")).collect()
+    }
+
+    /// Connected app with the shell open, the terminal tab shown and focused.
+    async fn with_shell() -> (UiState, AppState, FakeShell) {
+        let shell = FakeShell::open(98, 7, "$ ").await;
+        let mut app = connected_app();
+        app.terminal = TerminalState::Open(shell.view.clone());
+        let mut ui = synced(100, 30, &app);
+        ui.bottom.tab = BottomTab::Terminal;
+        ui.focus = Focus::Bottom;
+        (ui, app, shell)
+    }
+
+    fn input(commands: &[Command]) -> Vec<u8> {
+        match commands {
+            [Command::TerminalInput(bytes)] => bytes.clone(),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn showing_the_tab_opens_the_shell_once_with_the_panel_size_and_again_after_leaving() {
+        let mut app = connected_app();
+        app.terminal = TerminalState::Closed;
+        let mut ui = synced(100, 30, &app);
+        assert!(
+            housekeeping(&mut ui, &app).is_empty(),
+            "not before the tab shows"
+        );
+        on_event(&mut ui, &app, press(KeyCode::Char('5'), KeyModifiers::ALT));
+        assert_eq!(ui.focus, Focus::Bottom);
+        let size = terminal_size(&ui);
+        assert_eq!(
+            debug(&housekeeping(&mut ui, &app)),
+            [format!(
+                "TerminalOpen {{ cols: {}, rows: {} }}",
+                size.0, size.1
+            )]
+        );
+        assert!(
+            housekeeping(&mut ui, &app).is_empty(),
+            "the request is out: no repeats"
+        );
+        // leaving and coming back asks again (the first attempt may have failed)
+        on_event(&mut ui, &app, press(KeyCode::Char('1'), KeyModifiers::ALT));
+        assert!(housekeeping(&mut ui, &app).is_empty());
+        on_event(&mut ui, &app, press(KeyCode::Char('5'), KeyModifiers::ALT));
+        assert_eq!(housekeeping(&mut ui, &app).len(), 1);
+    }
+
+    #[test]
+    fn without_a_shell_nothing_is_opened_and_keys_do_nothing() {
+        let app = app(); // TerminalState::NotAvailable
+        let mut ui = synced(100, 30, &app);
+        on_event(&mut ui, &app, press(KeyCode::Char('5'), KeyModifiers::ALT));
+        assert!(housekeeping(&mut ui, &app).is_empty());
+        assert!(on_event(&mut ui, &app, plain(KeyCode::Char('x'))).is_empty());
+    }
+
+    #[tokio::test]
+    async fn every_key_but_the_escapes_goes_to_the_shell_encoded_with_its_modes() {
+        let (mut ui, app, shell) = with_shell().await;
+        assert_eq!(
+            input(&on_event(&mut ui, &app, plain(KeyCode::Char('q')))),
+            b"q"
+        );
+        assert!(!ui.quit_requested, "`q` is typed, it does not quit");
+        assert_eq!(input(&on_event(&mut ui, &app, plain(KeyCode::Tab))), b"\t");
+        assert_eq!(ui.focus, Focus::Bottom, "Tab does not move the focus");
+        assert_eq!(
+            input(&on_event(&mut ui, &app, plain(KeyCode::Esc))),
+            b"\x1b"
+        );
+        assert_eq!(
+            input(&on_event(
+                &mut ui,
+                &app,
+                press(KeyCode::Char('c'), KeyModifiers::CONTROL)
+            )),
+            [0x03]
+        );
+        assert_eq!(
+            input(&on_event(&mut ui, &app, plain(KeyCode::Up))),
+            b"\x1b[A"
+        );
+        shell.say("\x1b[?1h").await; // application cursor keys
+        assert_eq!(
+            input(&on_event(&mut ui, &app, plain(KeyCode::Up))),
+            b"\x1bOA"
+        );
+        assert!(
+            on_event(&mut ui, &app, plain(KeyCode::F(15))).is_empty(),
+            "unsendable keys are dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn ctrl_backslash_and_f12_leave_the_terminal_and_alt_digits_switch_tabs() {
+        let (mut ui, app, _shell) = with_shell().await;
+        assert!(
+            on_event(
+                &mut ui,
+                &app,
+                press(KeyCode::Char('\\'), KeyModifiers::CONTROL)
+            )
+            .is_empty()
+        );
+        assert_eq!(ui.focus, Focus::Remote, "back to the remote pane");
+        ui.focus = Focus::Bottom;
+        assert!(on_event(&mut ui, &app, plain(KeyCode::F(12))).is_empty());
+        assert_eq!(ui.focus, Focus::Remote);
+        ui.focus = Focus::Bottom;
+        assert!(on_event(&mut ui, &app, press(KeyCode::Char('4'), KeyModifiers::ALT)).is_empty());
+        assert_eq!(ui.bottom.tab, BottomTab::Log);
+        // and the terminal keeps its keys when it is shown again
+        on_event(&mut ui, &app, press(KeyCode::Char('5'), KeyModifiers::ALT));
+        assert_eq!(on_event(&mut ui, &app, plain(KeyCode::Char('x'))).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn shift_page_keys_scroll_the_history_by_a_page() {
+        let (mut ui, app, _shell) = with_shell().await;
+        let page = i32::from(terminal_size(&ui).1) - 1;
+        assert_eq!(
+            debug(&on_event(
+                &mut ui,
+                &app,
+                press(KeyCode::PageUp, KeyModifiers::SHIFT)
+            )),
+            [format!("TerminalScroll({page})")]
+        );
+        assert_eq!(
+            debug(&on_event(
+                &mut ui,
+                &app,
+                press(KeyCode::PageDown, KeyModifiers::SHIFT)
+            )),
+            [format!("TerminalScroll(-{page})")]
+        );
+        // plain PageUp belongs to the shell
+        assert_eq!(
+            input(&on_event(&mut ui, &app, plain(KeyCode::PageUp))),
+            b"\x1b[5~"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_shell_is_resized_with_the_panel_and_only_then() {
+        let (mut ui, app, _shell) = with_shell().await;
+        ui.bottom.term_size = Some(terminal_size(&ui));
+        assert!(housekeeping(&mut ui, &app).is_empty());
+        on_event(&mut ui, &app, Event::Resize(120, 40));
+        let size = terminal_size(&ui);
+        assert_eq!(
+            debug(&housekeeping(&mut ui, &app)),
+            [format!(
+                "TerminalResize {{ cols: {}, rows: {} }}",
+                size.0, size.1
+            )]
+        );
+        assert!(housekeeping(&mut ui, &app).is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_exited_shell_reopens_on_enter_and_ignores_other_keys() {
+        let shell = FakeShell::open(98, 7, "bye").await;
+        let mut app = connected_app();
+        app.terminal = TerminalState::Exited {
+            code: Some(0),
+            view: shell.view.clone(),
+        };
+        let mut ui = synced(100, 30, &app);
+        ui.bottom.tab = BottomTab::Terminal;
+        ui.focus = Focus::Bottom;
+        assert!(on_event(&mut ui, &app, plain(KeyCode::Char('x'))).is_empty());
+        let commands = on_event(&mut ui, &app, plain(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::TerminalOpen { .. }]),
+            "{commands:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pasting_goes_to_the_shell_bracketed_only_when_it_asked_for_it() {
+        let (mut ui, app, shell) = with_shell().await;
+        let commands = on_event(&mut ui, &app, Event::Paste("ls\nrm x".into()));
+        assert_eq!(input(&commands), b"ls\rrm x", "line breaks become Enter");
+        shell.say("\x1b[?2004h").await;
+        let commands = on_event(&mut ui, &app, Event::Paste("a\x1b[201~b".into()));
+        assert_eq!(
+            input(&commands),
+            b"\x1b[200~ab\x1b[201~",
+            "the end marker cannot be smuggled in"
+        );
     }
 }

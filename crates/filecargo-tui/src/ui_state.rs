@@ -86,6 +86,10 @@ pub struct BottomUi {
     /// Lines scrolled up from the newest; 0 while following.
     pub log_scroll: usize,
     pub log_follow: bool,
+    /// Size last given to the shell, to send a resize only when it changes.
+    pub term_size: Option<(u16, u16)>,
+    /// An open request is out, so the next frame does not send another.
+    pub term_open_sent: bool,
 }
 
 impl Default for BottomUi {
@@ -97,6 +101,8 @@ impl Default for BottomUi {
             failed: ListUi::default(),
             log_scroll: 0,
             log_follow: true,
+            term_size: None,
+            term_open_sent: false,
         }
     }
 }

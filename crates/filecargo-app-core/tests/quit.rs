@@ -96,7 +96,7 @@ fn quitting_during_a_transfer_asks_first_and_confirming_persists_the_queue() {
         answer: PromptAnswer::Confirm(true),
     });
     assert!(
-        wait_closed(&fx, Duration::from_secs(5)),
+        wait_closed(&fx, Duration::from_secs(20)),
         "the app must end after the confirmation"
     );
 

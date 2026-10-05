@@ -184,7 +184,8 @@ impl TerminalHandle {
         self.shared.status() == TermStatus::Running
     }
 
-    fn modes(&self) -> Modes {
+    /// The modes the remote application switched on, which change how keys are encoded.
+    pub fn modes(&self) -> Modes {
         self.with_screen(|s| Modes {
             application_cursor: s.application_cursor(),
             application_keypad: s.application_keypad(),
@@ -240,16 +241,17 @@ impl TerminalHandle {
     /// as if typed. The end-of-paste marker is stripped from the text, so pasted content cannot
     /// close the bracket early and have the rest run as typed input.
     pub fn paste(&self, text: &str) {
-        let bracketed = self.with_screen(vt100::Screen::bracketed_paste);
-        let mut bytes = Vec::with_capacity(text.len() + 12);
-        if bracketed {
-            bytes.extend_from_slice(b"\x1b[200~");
-            bytes.extend_from_slice(text.replace("\x1b[201~", "").as_bytes());
-            bytes.extend_from_slice(b"\x1b[201~");
-        } else {
-            bytes.extend_from_slice(text.replace("\r\n", "\r").replace('\n', "\r").as_bytes());
-        }
-        self.send_bytes(bytes);
+        self.send_bytes(self.paste_bytes(text));
+    }
+
+    /// What [`paste`](Self::paste) would send, for front-ends that send bytes themselves.
+    pub fn paste_bytes(&self, text: &str) -> Vec<u8> {
+        paste_bytes(text, self.with_screen(vt100::Screen::bracketed_paste))
+    }
+
+    /// The bytes `key` encodes to with the screen's current modes.
+    pub fn encode_key(&self, key: Key, mods: Mods) -> Vec<u8> {
+        encode(key, mods, self.modes())
     }
 
     /// Resizes the screen now and tells the server soon (at most 10 times a second; the latest
@@ -307,4 +309,19 @@ impl TerminalHandle {
     pub fn close(&self) {
         let _ = self.input.send(ShellInput::Close);
     }
+}
+
+/// Pasted text as typed input: bracketed when `bracketed`, otherwise with line breaks as `\r`.
+/// The end-of-paste marker is stripped, so pasted content cannot close the bracket early and
+/// have the rest run as typed input.
+pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(text.len() + 12);
+    if bracketed {
+        bytes.extend_from_slice(b"\x1b[200~");
+        bytes.extend_from_slice(text.replace("\x1b[201~", "").as_bytes());
+        bytes.extend_from_slice(b"\x1b[201~");
+    } else {
+        bytes.extend_from_slice(text.replace("\r\n", "\r").replace('\n', "\r").as_bytes());
+    }
+    bytes
 }

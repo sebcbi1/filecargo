@@ -37,7 +37,7 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 ### Checkpoint B: connect to a site with password + host-key prompt, browse, and edit sites, all in the binary
 ### Phase 3: Transfers, log, terminal, polish
 - [x] T6: Bottom panel: Queue / Completed / Failed / Log tabs, progress bars, queue bindings, transfer bindings in panes (M)
-- [ ] T7: Terminal tab (`tui-term`), key mapping to `terminal::Key`, focus escape, scrollback keys (S)
+- [x] T7: Terminal tab (`tui-term`), key mapping to `terminal::Key`, focus escape, scrollback keys (S)
 - [ ] T8: Help overlay from keymap, status line, mouse (wheel + click focus), `NO_COLOR`, complete snapshot suite, `SMOKE.md` + manual smoke on 3 OSes (M)
 ### Checkpoint C: all 6 AC green, CI green, smoke checklist done, human review
 
@@ -106,3 +106,12 @@ _Appended per task during implementation._
 - View (`bottom_view.rs`): tab titles with counts (Failed in red when non-empty), queue table with direction arrow, name (`dir/` for directories), `██░░ 44%` bar, `done/total`, speed, ETA, a totals footer with `PAUSED (p to resume)`, conflict items shown as `waiting for you`; completed list (result text, size, finished time); failed list (reason, retry/final); log lines with a UTC clock and coloured level; empty-state messages.
 - `F5` / `t` / `Enter`-on-file transfers were already in T2.
 - 17 new tests (reducer 9 incl. the binding-conflict check, formats 1, snapshots: queue, completed, failed, log + paused/empty assertions).
+
+### T7 Terminal tab (done)
+- **terminal crate:** `TerminalHandle::{modes, encode_key, paste_bytes}` and the free `paste_bytes(text, bracketed)` (the hardening — end-marker stripping, `\n` → `\r` — now lives in one pure function used by `paste` too); prelude re-exports `paste_bytes`.
+- `keys.rs`: crossterm `KeyEvent` → `terminal::{Key, Mods}` (function keys 1–12; anything else a terminal cannot send is dropped).
+- **Keys on the tab** (`reducer::terminal_key`): the keymap's `Terminal` context has only `Ctrl-\` / `F12` (leave: focus goes back to the remote pane, or local without a session), `Shift-PgUp` / `Shift-PgDn` (`TerminalScroll(±(rows-1))`) — looked up with the new `keymap::lookup_exact`, i.e. **no global fallback**, so `Tab`, `Esc`, `q`, `Ctrl-c` all reach the shell. `Alt-1..5` still switch tabs. Everything else becomes `Command::TerminalInput(handle.encode_key(..))`, encoded with the screen's current modes (application cursor keys verified). Paste → `TerminalInput(paste_bytes)` (bracketed only if the remote asked).
+- **Open / resize** (`reducer::housekeeping`, called by the loop after every sync): showing the tab with `TerminalState::Closed` sends one `TerminalOpen` sized to the panel; leaving the tab re-arms it (a failed open is retried on the next visit, never in a loop); an open shell gets `TerminalResize` when the panel changes size. An exited shell shows its last screen plus "Enter to reopen" (`Enter` → `TerminalOpen`).
+- View: `tui_term::widget::PseudoTerminal` over `TerminalHandle::with_screen` (colours, bold, cursor), an "↑ N lines back · type to return" badge while scrolled, placeholders for "needs an SFTP connection" / "Opening the shell…".
+- Tests: 3 key-mapping, 8 reducer (open once / re-arm, escapes, mode-aware encoding, scroll, resize, exited, paste, no-shell), 3 view (open screen with colours and cursor, exited, placeholders). The shell is a `FakeShell` (`filecargo_terminal::spawn` over in-memory channels).
+- Also: `app-core/tests/quit.rs` waited 5 s for the app to end and flaked when the machine was busy compiling; widened to 20 s.

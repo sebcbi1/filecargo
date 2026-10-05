@@ -411,3 +411,43 @@ fn the_log_tab_shows_the_newest_lines_with_levels() {
     }
     insta::assert_snapshot!(draw(&ui, &app));
 }
+
+fn terminal_screen(state: filecargo_app_core::prelude::TerminalState) -> String {
+    let mut app = connected_app();
+    app.terminal = state;
+    let mut ui = synced(100, 30, &app);
+    ui.bottom.tab = crate::ui_state::BottomTab::Terminal;
+    ui.focus = crate::ui_state::Focus::Bottom;
+    draw(&ui, &app)
+}
+
+#[tokio::test]
+async fn the_terminal_tab_draws_the_shell_screen_with_colours_and_the_cursor() {
+    use crate::test_support::FakeShell;
+    use filecargo_app_core::prelude::TerminalState;
+    let shell = FakeShell::open(
+        98,
+        4,
+        "me@prod:~$ ls\r\n\x1b[1;34mhtml\x1b[0m  index.php  style.css\r\nme@prod:~$ ",
+    )
+    .await;
+    insta::assert_snapshot!(terminal_screen(TerminalState::Open(shell.view.clone())));
+}
+
+#[tokio::test]
+async fn an_exited_shell_keeps_its_screen_and_offers_to_reopen() {
+    use crate::test_support::FakeShell;
+    use filecargo_app_core::prelude::TerminalState;
+    let shell = FakeShell::open(98, 3, "logout\r\n").await;
+    insta::assert_snapshot!(terminal_screen(TerminalState::Exited {
+        code: Some(0),
+        view: shell.view.clone()
+    }));
+}
+
+#[test]
+fn the_terminal_tab_explains_why_there_is_no_shell() {
+    use filecargo_app_core::prelude::TerminalState;
+    assert!(terminal_screen(TerminalState::NotAvailable).contains("needs an SFTP connection"));
+    assert!(terminal_screen(TerminalState::Closed).contains("Opening the shell"));
+}

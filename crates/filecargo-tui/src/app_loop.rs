@@ -46,6 +46,9 @@ pub async fn run(
         if dirty {
             let state = snapshots.borrow().clone();
             reducer::sync(&mut ui, &state);
+            for command in reducer::housekeeping(&mut ui, &state) {
+                app.send(command);
+            }
             terminal.draw(|frame| render(frame, &ui, &state))?;
             dirty = false;
         }

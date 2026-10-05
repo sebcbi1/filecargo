@@ -68,6 +68,10 @@ pub enum Action {
     QueueRetryAll,
     QueueClear,
     LogFollow,
+    // terminal tab
+    TerminalEscape,
+    TerminalScrollUp,
+    TerminalScrollDown,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -201,6 +205,10 @@ pub static BINDINGS: &[Binding] = &[
     Binding { context: C::Log, keys: &[plain(KeyCode::End), ch('f')], label: "End f", action: A::LogFollow, help: "follow the newest line" },
     Binding { context: C::Log, keys: &[plain(KeyCode::Right), ch('l')], label: "Right Left", action: A::TabNext, help: "next / previous tab" },
     Binding { context: C::Log, keys: &[plain(KeyCode::Left), ch('h')], label: "", action: A::TabPrev, help: "" },
+    // ---- terminal tab (every other key goes to the shell) -------------------------------------
+    Binding { context: C::Terminal, keys: &[ctrl('\\'), f(12)], label: "Ctrl-\\ F12", action: A::TerminalEscape, help: "leave the terminal (the shell keeps running)" },
+    Binding { context: C::Terminal, keys: &[shifted(KeyCode::PageUp)], label: "Shift-PgUp", action: A::TerminalScrollUp, help: "scroll back through the output" },
+    Binding { context: C::Terminal, keys: &[shifted(KeyCode::PageDown)], label: "Shift-PgDn", action: A::TerminalScrollDown, help: "scroll forward" },
 ];
 
 fn normalize(key: KeyEvent) -> (KeyCode, KeyModifiers) {
@@ -218,6 +226,17 @@ fn matches(spec: &KeySpec, code: KeyCode, mods: KeyModifiers) -> bool {
         spec_mods.remove(KeyModifiers::SHIFT);
     }
     spec.code == code && spec_mods == mods
+}
+
+/// Like [`lookup`] but without the global fallback: for the terminal tab, where keys such as
+/// `Tab` and `q` belong to the shell.
+pub fn lookup_exact(context: Context, key: KeyEvent) -> Option<Action> {
+    let (code, mods) = normalize(key);
+    BINDINGS
+        .iter()
+        .filter(|b| b.context == context)
+        .find(|b| b.keys.iter().any(|k| matches(k, code, mods)))
+        .map(|b| b.action)
 }
 
 /// The action bound to `key` in `context`, falling back to the global bindings.

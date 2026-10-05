@@ -243,3 +243,50 @@ pub fn busy_queue() -> QueueSnapshot {
         },
     }
 }
+
+/// A terminal view fed `text` as if the remote had printed it. Needs a tokio runtime.
+pub struct FakeShell {
+    pub view: TerminalView,
+    pub output: tokio::sync::mpsc::UnboundedSender<filecargo_remote_fs::ShellOutput>,
+    /// Kept so the shell channel stays open.
+    pub _input: tokio::sync::mpsc::UnboundedReceiver<filecargo_remote_fs::ShellInput>,
+}
+
+impl FakeShell {
+    pub async fn open(cols: u16, rows: u16, text: &str) -> Self {
+        let (input_tx, input) = tokio::sync::mpsc::unbounded_channel();
+        let (output, output_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handle = filecargo_terminal::spawn(
+            filecargo_remote_fs::ShellChannel {
+                input: input_tx,
+                output: output_rx,
+            },
+            TermSize { cols, rows },
+            1000,
+        );
+        let shell = Self {
+            view: TerminalView { handle },
+            output,
+            _input: input,
+        };
+        shell.say(text).await;
+        shell
+    }
+
+    /// Feeds output and waits until the screen has taken it.
+    pub async fn say(&self, text: &str) {
+        let before = self.view.handle.generation();
+        self.output
+            .send(filecargo_remote_fs::ShellOutput::Data(
+                text.as_bytes().to_vec(),
+            ))
+            .unwrap();
+        for _ in 0..400 {
+            if self.view.handle.generation() != before || text.is_empty() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        panic!("the screen never took the output");
+    }
+}
