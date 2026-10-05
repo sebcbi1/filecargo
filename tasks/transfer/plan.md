@@ -1,6 +1,6 @@
 # Implementation Plan: `transfer` module
 
-> Spec: [SPEC-transfer.md](../../SPEC-transfer.md) · Tasks: [todo.md](todo.md) · Status: **awaiting review** · 2026-10-05
+> Spec: [SPEC-transfer.md](../../SPEC-transfer.md) · Tasks: [todo.md](todo.md) · Status: **complete; awaiting final human review** · 2026-10-05
 > Starts after `remote-fs` Checkpoint A (trait, `RootedFs` and contract suite exist). Can run in parallel with `terminal`.
 
 ## Overview
@@ -45,8 +45,8 @@ T1 model + persistence ── T2 scheduler + single file ── T3 directories �
 ### Checkpoint B: AC2, AC3, AC6, AC7 green
 ### Phase 3: Durability and real servers
 - [x] T7: Debounced persistence, `shutdown`, restart restore, corrupt file backup (S)
-- [ ] T8: Integration round trip vs docker SFTP and FTP, `max_concurrent = 4` (S)
-### Checkpoint C: module complete (all 8 AC), coverage ≥ 80 %, human review
+- [x] T8: Integration round trip vs docker SFTP and FTP, `max_concurrent = 4` (S)
+### Checkpoint C: module complete (all 8 AC), coverage ≥ 80 %, human review — AC and coverage done; human review pending
 
 ## AC Traceability
 | AC | Task | AC | Task |
@@ -116,3 +116,24 @@ _Appended per task during implementation._
 ### T7 Persistence lifecycle (done)
 - The scheduler loads `queue.json` in `Queue::start`, saves at most once a second after a persisted-state change, and writes a final copy in `shutdown` (running jobs aborted, their items saved as `Pending` with `transferred` taken from the progress cell). The **initial snapshot is published synchronously in `start`**, so a restored queue is visible immediately (found by the restart test).
 - Verified: pending + hung-mid-file + failed items survive a restart; the partial one resumes at its offset (the first call of the new run is `("upload", 2_000_000)`), SHA-256 equal, outcome `Resumed`; ids keep increasing and completed items are not restored; 50 enqueues do not produce 50 writes yet reach the file within ~1 s; a corrupt `queue.json` is renamed to `.bak-<secs>`, the queue starts empty and a `WARN` is logged (captured through a tracing subscriber). 4 tests; `Harness::restart`.
+
+### T8 Docker integration (done)  → Checkpoint C reached (human review pending)
+- `tests/integration.rs` (`--features integration`): a `Connector` over the real `remote_fs::connect` (auto-trusting prompter, password answered), 1,000 files over 50 directories uploaded then downloaded with `max_concurrent = 4` against docker **SFTP and FTP**; each direction finishes with 1,051 `ItemFinished` ok / 0 failed and a byte-identical tree (SHA-256). ~12 s per run, stable over repeated runs; the FTP run did not need the retry logic. `cargo it` now covers both crates (`.cargo/config.toml`).
+- Coverage (`cargo llvm-cov -p filecargo-transfer --features integration`): **94.6 % lines**.
+
+### Acceptance criteria → tests
+| AC | Covered by |
+|---|---|
+| 1 1,000-file trees, max_concurrent respected | `tests/trees.rs` (both directions, peak ≤ 4), `tests/scheduler.rs` (peak == 3 of 3) |
+| 2 conflict rules + ask/apply-to-all | `tests/conflicts.rs`, `conflict::tests` |
+| 3 drop at byte N, resume, 3 failures → Failed | `tests/resume.rs` (upload + download resume at the partial size, SHA-256) |
+| 4 restart | `tests/restart.rs` |
+| 5 corrupt `queue.json` | `store::tests`, `tests/restart.rs` (warning captured) |
+| 6 `remove` cancels < 1 s, frees the slot | `tests/resume.rs` |
+| 7 `Changed` ≤ 10/s | `tests/progress.rs` |
+| 8 docker round trip | `tests/integration.rs` |
+
+### Notes for the owner (`app-core`) and the human review
+- `Queue::start` has no `processing` argument (the queue starts processing); `Queue::resolve` and `QueueItem.conflict` were added to the spec's sketch. Completed items are capped at 1,000 in the snapshot, so count `ItemFinished` events if an exact total matters.
+- A connection returns to the pool only after a successful job; `Connector::connect` is called once per job when no pooled connection exists, so it should be cheap to call repeatedly and must share `SessionTrust` (otherwise every worker prompts).
+- Known limits: if the `Rename` rule's transfer fails before any byte moves, the item already follows the new name (fine); an item whose local path is not UTF-8 is not persisted; the FTP backend's `remove_all`-style costs do not apply here (the queue never lists a directory twice).

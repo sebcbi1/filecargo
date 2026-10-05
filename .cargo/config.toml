@@ -1,3 +1,3 @@
 [alias]
 # Integration tests against the Docker servers: `docker compose -f tests/docker/compose.yml up -d --wait`
-it = "test -p filecargo-remote-fs --features integration"
+it = "test -p filecargo-remote-fs -p filecargo-transfer --features filecargo-remote-fs/integration,filecargo-transfer/integration"

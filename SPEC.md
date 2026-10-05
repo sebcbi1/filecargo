@@ -51,7 +51,7 @@ Servers, folders and settings are shared: a site added in one UI exists in the o
 |---|---|---|---|---|
 | `config` | Server tree (folders + sites), settings, TOML persistence, keychain secrets, FileZilla import | — | [SPEC-config.md](SPEC-config.md) | done (awaiting final review) |
 | `remote-fs` | Async filesystem trait (list, stat, ranged read/write, rename, delete, mkdir, chmod) + **local**, **FTP/FTPS**, **SFTP** backends; connect, auth, host-key / TLS-cert verification | `config` | [SPEC-remote-fs.md](SPEC-remote-fs.md) | done (awaiting final review) |
-| `transfer` | Queue engine: pending/active/completed/failed, N concurrent workers, recursion, resume, conflict rules, progress events, queue persistence | `remote-fs`, `config` | [SPEC-transfer.md](SPEC-transfer.md) | spec drafted |
+| `transfer` | Queue engine: pending/active/completed/failed, N concurrent workers, recursion, resume, conflict rules, progress events, queue persistence | `remote-fs`, `config` | [SPEC-transfer.md](SPEC-transfer.md) | done (awaiting final review) |
 | `terminal` | PTY shell channel on the SFTP session's SSH connection; VT parsing into a screen grid both UIs render | `remote-fs` | [SPEC-terminal.md](SPEC-terminal.md) | spec drafted |
 | `app-core` | UI-agnostic app state + commands: session, pane state, server-tree ops, log bus, event stream: the single API both front-ends drive | `config`, `remote-fs`, `transfer`, `terminal` | [SPEC-app-core.md](SPEC-app-core.md) | spec drafted |
 | `tui` | ratatui front-end → bin `filecargo-tui` | `app-core` | [SPEC-tui.md](SPEC-tui.md) | spec drafted |

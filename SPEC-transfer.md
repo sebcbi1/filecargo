@@ -1,6 +1,6 @@
 # Spec: transfer
 
-> Module id: `transfer` · Crate: `crates/filecargo-transfer` · Depends on: `remote-fs`, `config` · Status: **draft, awaiting review**
+> Module id: `transfer` · Crate: `crates/filecargo-transfer` · Depends on: `remote-fs`, `config` · Status: **implemented, awaiting final review**
 > Project-wide rules: [SPEC.md](SPEC.md). Plan: [tasks/transfer/plan.md](tasks/transfer/plan.md).
 
 ## Objective
@@ -43,6 +43,7 @@ pub struct QueueItem {
     pub state: ItemState,
     pub attempts: u32,
     pub parent: Option<TransferId>,         // directory item that produced this one
+    pub conflict: Option<ConflictRule>,     // per-item rule (from NewTransfer), kept across restarts
 }
 
 pub enum ItemState {
