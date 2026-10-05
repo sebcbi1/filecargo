@@ -18,6 +18,7 @@ On macOS with OrbStack, run `orb start` first.
 | `ftp` | 2121 (passive 30000-30009) | `ftpuser` / `ftppass` | plain FTP and explicit FTPS (`AUTH TLS`), `NoSessionReuseRequired` |
 | `ftps-implicit` | 9990 (passive 30010-30019) | same | implicit FTPS |
 | `ftps-reuse` | 2122 (passive 30020-30029) | same | explicit FTPS, session reuse required (ProFTPD default) |
+| `ftp-list` | 2123 (passive 30030-30039) | same | plain FTP with `FactsAdvertise off`: no MLSD in FEAT, forces the `LIST` fallback |
 
 - `certs/server.crt` is self-signed for `localhost` / `127.0.0.1`. `certs/other.crt` is a second
   certificate for the same name, used to test that a changed cert prompts again.

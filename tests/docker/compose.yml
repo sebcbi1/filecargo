@@ -45,3 +45,11 @@ services:
     volumes: ["./certs:/certs:ro"]
     ports: ["2122:2122", "30020-30029:30020-30029"]
     healthcheck: *ftp-health
+
+  # Same as `ftp`, but FEAT does not advertise MLSD/MLST: exercises the LIST fallback.
+  ftp-list:
+    build: ./proftpd
+    environment: { CONF: list.conf }
+    volumes: ["./certs:/certs:ro"]
+    ports: ["2123:2123", "30030-30039:30030-30039"]
+    healthcheck: *ftp-health

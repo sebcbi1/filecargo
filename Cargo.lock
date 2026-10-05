@@ -877,6 +877,7 @@ dependencies = [
  "russh-sftp",
  "secrecy",
  "sha2 0.10.9",
+ "suppaftp",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1243,6 +1244,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazy-regex"
+version = "3.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0a2cce8a22920a29fdcc8c9170aa5d29edd9fbcf8bea856e24c2cb1c2419f67"
+dependencies = [
+ "lazy-regex-proc_macros",
+ "once_cell",
+ "regex",
+]
+
+[[package]]
+name = "lazy-regex-proc_macros"
+version = "3.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f1e4b1f1d8c71edb4ff2b2150ec4606445fd2ddf67ddc097655daf59286baa6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "regex",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1579,6 +1603,26 @@ checksum = "44dc769b75f93afdddd8c7fa12d685292ddeff1e66f7f0f3a234cf1818afe892"
 dependencies = [
  "base64ct",
  "ctutils",
+]
+
+[[package]]
+name = "pin-project"
+version = "1.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2466b2336ed02bcdca6b294417127b90ec92038d1d5c4fbeac971a922e0e0924"
+dependencies = [
+ "pin-project-internal",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "1.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c96395f0a926bc13b1c17622aaddda1ecb55d49c8f1bf9777e4d877800a43f8b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2057,6 +2101,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls"
+version = "0.23.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+dependencies = [
+ "log",
+ "once_cell",
+ "ring",
+ "rustls-pki-types",
+ "rustls-webpki",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "rustls-pki-types"
+version = "1.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96"
+dependencies = [
+ "zeroize",
+]
+
+[[package]]
+name = "rustls-webpki"
+version = "0.103.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+dependencies = [
+ "ring",
+ "rustls-pki-types",
+ "untrusted",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2442,6 +2521,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "suppaftp"
+version = "12.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b161d71217da0cc91bd09c8f98ac5ad2a5e5b2735c6dfe1c6cb08b4471612f35"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "lazy-regex",
+ "log",
+ "pin-project",
+ "rustls-pki-types",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
 name = "syn"
 version = "2.0.119"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2529,6 +2625,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.6",
+]
+
+[[package]]
+name = "tokio-rustls"
+version = "0.26.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9cc2678c2cdd569ef8215e2afd7954ada2ae20b4fdd2c5fe6139a3b02d105db"
+dependencies = [
+ "rustls",
+ "tokio",
 ]
 
 [[package]]

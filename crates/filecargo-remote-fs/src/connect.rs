@@ -109,8 +109,22 @@ pub async fn connect(site: &Site, ctx: &ConnectContext) -> Result<Session, Conne
                 fs: Arc::new(sftp),
             })
         }
-        Protocol::Ftp | Protocol::FtpsExplicit | Protocol::FtpsImplicit => Err(ConnectError::Fs(
-            FsError::Unsupported("FTP (not implemented yet)"),
+        Protocol::Ftp => {
+            let ftp = crate::ftp::open(site, ctx).await?;
+            let home = ftp.home().await?;
+            Ok(Session {
+                info: SessionInfo {
+                    protocol: site.protocol,
+                    banner: None,
+                    tls: None,
+                    home,
+                },
+                shell: None,
+                fs: Arc::new(ftp),
+            })
+        }
+        Protocol::FtpsExplicit | Protocol::FtpsImplicit => Err(ConnectError::Fs(
+            FsError::Unsupported("FTPS (not implemented yet)"),
         )),
     }
 }

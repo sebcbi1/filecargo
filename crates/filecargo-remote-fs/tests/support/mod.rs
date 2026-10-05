@@ -119,3 +119,30 @@ pub async fn docker_sftp() -> (Session, Arc<TestPrompter>, tempfile::TempDir) {
     let session = connect(&site, &ctx).await.unwrap();
     (session, prompter, dir)
 }
+
+// ---- docker ftp session ------------------------------------------------------------------
+
+/// A connected session to one of the docker FTP servers (`ftpuser` / `ftppass`).
+/// Ports: 2121 explicit/plain, 2123 plain without MLSD in FEAT.
+pub async fn docker_ftp(port: u16) -> (Session, Arc<TestPrompter>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let prompter = TestPrompter::new();
+    prompter.trust(TrustDecision::Reject);
+    prompter.answer(&["ftppass"], false);
+    let mut ctx = ConnectContext::new(
+        Paths::from_override(Some(dir.path().join("cfg"))),
+        Arc::new(MemoryStore::new()),
+        prompter.clone(),
+    );
+    ctx.user_known_hosts = None;
+    let session = connect(&docker_ftp_site(port), &ctx).await.unwrap();
+    (session, prompter, dir)
+}
+
+pub fn docker_ftp_site(port: u16) -> Site {
+    let mut site = Site::new("docker-ftp", Protocol::Ftp, "127.0.0.1");
+    site.port = Some(port);
+    site.user = "ftpuser".to_owned();
+    site.auth = Auth::Password { remember: false };
+    site
+}

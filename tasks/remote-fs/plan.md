@@ -54,7 +54,7 @@ T3 docker servers + CI integration job ─────────────�
 - [x] T7: `ShellOpener` / `ShellChannel` with a draining pump and resize (S)
 ### Checkpoint B: AC3, AC4, AC7, AC8 + contract (SFTP) green
 ### Phase 3: FTP / FTPS
-- [ ] T8: FTP connection, login, `TYPE I`, FEAT/UTF8, MLSD parser + LIST fallback, metadata ops, serialized control connection (M)
+- [x] T8: FTP connection, login, `TYPE I`, FEAT/UTF8, MLSD parser + LIST fallback, metadata ops, serialized control connection (M)
 - [ ] T9: FTP download/upload with resume (`REST` / `APPE`), cancel ⇒ broken, NOOP keepalive, redacted command log (M)
 - [ ] T10: FTPS explicit + implicit: pinning verifier, cert prompt and pinning file, data-channel TLS, 522/534 ⇒ `TlsSessionReuseRequired` (M)
 - [ ] T11: Active mode (Linux CI), whole-run log redaction test, final contract run on all backends, coverage (S)
@@ -130,3 +130,12 @@ _Appended per task during implementation._
 - The pump task drains the channel unconditionally (stdout and stderr both become `ShellOutput::Data`), sends `Exit(status)` then `Closed` last. `ShellInput::Close` (or dropping the input sender) sends EOF + close.
 - Verified: exit status 3 propagates; `stty size` follows `Resize`; 4 MB of unread output does not stall SFTP; **one TCP connection** is asserted client-side by counting this process's established sockets to :2222 through `/proc` (own test binary, Linux only), including after a second shell.
 - Checkpoint B: AC3, AC4, AC7, AC8 and the SFTP contract suite are green (`cargo it`: 54 integration tests + 29 unit tests); fmt and clippy clean.
+
+### T8 FTP connection, listing, metadata ops (done)
+- `ftp::open(site, ctx) -> FtpFs`, wired into `connect()` for plain `Protocol::Ftp` (FTPS arrives with T10). `FtpFs` holds one `AsyncRustlsFtpStream` (the same type FTPS will use) behind a `tokio::sync::Mutex`; every call goes through `begin()` / `Op::finish()`: the connection is marked **broken** when a call starts and un-marked only when it completes without a connection-level error (`Disconnected` / `Timeout` / `TlsSessionReuseRequired`). A cancelled (dropped) call therefore leaves it broken and later calls return `Disconnected` (AC9 mechanism). Each control command also runs under `timeout_secs`.
+- Login: anonymous (`anonymous` / `anonymous@`) or password via the shared `credentials` (same lookup/remember/retry-once rules as SFTP); key and agent are `AuthFailed`. After login: `TYPE I`, `FEAT` (keys upper-cased), `OPTS UTF8 ON` when advertised, EPSV when advertised else PASV + NAT workaround. A one-time-per-connect `warn` for plain FTP.
+- Listing: MLSD when advertised (own parser `ftp/mlsd.rs`: slink targets, fractional times, `;` in names, case-insensitive facts, cdir/pdir skipped), else `LIST -a <path>` through the library's Unix/DOS parsers with a name-only `Other` entry for anything unparsable. Date arithmetic is in `ftp/time.rs` (no date crate).
+- `stat`: `MLST` when advertised, else the parent listing; root is synthesised. `mkdir` / `rmdir` disambiguate ProFTPD's blanket `550` with a follow-up `stat` / `list`; `chmod` = `SITE CHMOD` (500/501/502/504 → `Unsupported`); `set_modified` = `MFMT` when advertised.
+- Paths containing CR/LF are refused before they reach the wire (command injection guard).
+- New docker service **`ftp-list`** (port 2123, ProFTPD `FactsAdvertise off`) forces the LIST fallback; `docker_ftp(port)` helper in `tests/support`.
+- Verified: 23 parser unit tests; 8 integration tests (both listing paths, AlreadyExists / DirectoryNotEmpty / chmod / rename / unicode names, 12 concurrent tasks on one connection, injection guard, retry-once login, refused connect). `download` / `upload` are still `Unsupported` until T9.
