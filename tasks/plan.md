@@ -57,7 +57,7 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 - [ ] `cargo build`, `cargo test`, fmt, clippy clean locally; CI file validated
 
 ### Phase 2: Server tree
-- [ ] T3: Add a root site and persist it (M)
+- [x] T3: Add a root site and persist it (M)
 - [ ] T4: Folders + rename / move / duplicate / delete (M)
 - [ ] T5: Safe multi-instance writes + corrupt-file handling (M)
 
