@@ -1,0 +1,29 @@
+[package]
+name = "filecargo-app-core"
+description = "UI-agnostic application state and commands shared by the filecargo front-ends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+filecargo-config.workspace = true
+filecargo-remote-fs.workspace = true
+filecargo-transfer.workspace = true
+filecargo-terminal.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[features]
+# Not used yet: real-server tests live in the lower crates.
+integration = []
+
+[lints]
+workspace = true

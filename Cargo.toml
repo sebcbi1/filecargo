@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["crates/*"]
 # Plain `cargo build` / `cargo test` never compile the GUI (gpui); add new core/TUI crates here.
-default-members = ["crates/filecargo-config", "crates/filecargo-remote-fs", "crates/filecargo-transfer", "crates/filecargo-terminal"]
+default-members = ["crates/filecargo-config", "crates/filecargo-remote-fs", "crates/filecargo-transfer", "crates/filecargo-terminal", "crates/filecargo-app-core"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,6 +15,7 @@ filecargo-config = { path = "crates/filecargo-config" }
 filecargo-remote-fs = { path = "crates/filecargo-remote-fs" }
 filecargo-transfer = { path = "crates/filecargo-transfer" }
 filecargo-terminal = { path = "crates/filecargo-terminal" }
+filecargo-app-core = { path = "crates/filecargo-app-core" }
 
 async-trait = "0.1"
 base64 = "0.23.1"
@@ -28,7 +29,7 @@ secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1"
 thiserror = "2.0.21"
-tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros", "fs"] }
+tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "rt-multi-thread", "macros", "fs"] }
 toml = "1.1.6"
 tracing = "0.1.44"
 vt100 = "=0.16.2"
@@ -46,7 +47,7 @@ uuid = { version = "1.27.0", features = ["v4", "serde"] }
 # test-only
 proptest = "1.11.0"
 tempfile = "3.27.0"
-tracing-subscriber = "0.3.23"
+tracing-subscriber = { version = "0.3.23", features = ["registry"] }
 tracing-log = "0.2"
 
 [workspace.lints.rust]

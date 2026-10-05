@@ -36,7 +36,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 
 ## Task List
 ### Phase 1: Skeleton
-- [ ] T1: Crate, `App::start`, actor loop, `watch` snapshots, coalescing, `shutdown`; startup with config errors + `ResetConfig` (M)
+- [x] T1: Crate, `App::start`, actor loop, `watch` snapshots, coalescing, `shutdown`; startup with config errors + `ResetConfig` (M)
 - [ ] T2: Log layer, ring buffer, `FILECARGO_LOG_FILE` (S)
 - [ ] T3: Tree commands, `ImportFileZilla` (→ `Message` with the report), `SetSitePassword` (S)
 ### Checkpoint A: AC1, AC2 green; snapshot API reviewed (UI authors depend on it)
@@ -72,3 +72,10 @@ None.
 
 ## Hand-off Notes
 _Appended per task during implementation._
+
+### T1 Actor, runtime, snapshots (done)
+- `App::start(StartOptions) -> AppHandle` builds the 2-worker runtime, opens the `ConfigStore` **synchronously** (so `handle.state()` is complete the moment `start` returns), and spawns the actor. The actor `select!`s the message queue and a publish timer: state is mutated in place, `changed()` marks it dirty, and a snapshot (`Arc<AppState>` clone) is published at most every 33 ms (`SNAPSHOTS_PER_SECOND = 30`), plus once at shutdown.
+- **The whole public vocabulary is defined now** (`AppState`, `SessionState`, `Pane`, `Sort`, `Prompt*`, `Notice`, `TerminalState`, `Command`, `LogBuffer`, `SessionFactory`) so UI authors can read it at Checkpoint A; commands not implemented yet are logged and ignored until their task lands. Config problems never fail `start`: `startup_error` is set and the tree is empty. `ResetConfig` backs up `servers.toml` (via `ConfigStore::reset`) **and** an unreadable `settings.toml` (`ConfigStore::reset` only handles the former), then reloads. A missing OS keychain yields a one-time warning notice (`KeyringStore::native()` is tried directly so the reason is known). `UpdateSettings` is already wired.
+- `AppHandle::shutdown(timeout)`: idempotent (the runtime sits in a shared `Mutex<Option<_>>`), asks the actor to finish, then `Runtime::shutdown_timeout`, so a never-ending async task or a stuck blocking task cannot hold it past the timeout (tested). It must be called from outside the runtime.
+- Tests are plain `#[test]`s: `Fixture::wait_for` blocks on the app's own runtime handle. 7 tests (fresh start, configured/bad start dir, corrupt `servers.toml` / `settings.toml` + reset, newer-version file untouched, shutdown with hung tasks, ≤ 35 snapshots/s under a burst of 200 changes).
+- Fixed on the way: `tokio::time` values must be created inside the runtime (`runtime.enter()` in `start`, `block_on(async { timeout(..) })` in `shutdown`).
