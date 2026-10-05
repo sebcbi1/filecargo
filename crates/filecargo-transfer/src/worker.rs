@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use filecargo_config::ConflictRule;
 use filecargo_remote_fs::{Entry, EntryKind, FsError, Progress, RemoteFs, RemotePath, local};
-use tokio::io::{AsyncSeekExt, BufReader, BufWriter};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufReader, BufWriter};
 
 use crate::conflict::{self, Decision};
 use crate::{ConflictInfo, Direction, Outcome, QueueItem, TransferError};
@@ -276,11 +276,16 @@ async fn download(job: &Job, target: &Path, offset: u64) -> Result<(), TransferE
             .map_err(|e| local_io(target, &e))?;
     }
     let mut writer = BufWriter::with_capacity(256 * 1024, file);
-    job.fs
+    let result = job
+        .fs
         .download(&job.item.remote, offset, &mut writer, job.progress.as_ref())
-        .await
-        .map(|_| ())
-        .map_err(from_fs)
+        .await;
+    if result.is_err() {
+        // Keep what already arrived (up to a buffer's worth): a retry resumes from the file's
+        // real size, so every byte saved here is a byte not downloaded twice.
+        let _ = writer.flush().await;
+    }
+    result.map(|_| ()).map_err(from_fs)
 }
 
 /// A name from a listing that is safe to join onto a local directory: exactly one normal path

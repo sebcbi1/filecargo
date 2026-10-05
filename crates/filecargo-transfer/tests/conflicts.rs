@@ -237,9 +237,14 @@ async fn apply_to_all_answers_the_remaining_conflicts_without_asking_again() {
             transfers.push(transfer);
             targets.push(target);
         }
+        // Only `a` is queued at first. While it waits for its answer, `b` and `c` are queued
+        // behind a pause, so they cannot reach their conflict before the owner has answered:
+        // that makes "later conflicts are not asked" deterministic.
+        let mut rest = transfers.split_off(1);
         h.queue.enqueue(transfers);
-
         let (id, _) = h.next_conflict().await;
+        h.queue.set_processing(false);
+        h.queue.enqueue(std::mem::take(&mut rest));
         h.queue.resolve(
             id,
             ConflictDecision {
@@ -247,6 +252,7 @@ async fn apply_to_all_answers_the_remaining_conflicts_without_asking_again() {
                 apply_to_all: true,
             },
         );
+        h.queue.set_processing(true);
         h.idle().await;
 
         assert_eq!(

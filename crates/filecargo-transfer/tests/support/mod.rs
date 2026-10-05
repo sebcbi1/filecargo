@@ -17,6 +17,11 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
 
+#[path = "flaky.rs"]
+pub mod flaky;
+#[allow(unused_imports)]
+pub use flaky::{Fault, FlakyControl, FlakyFs};
+
 /// What the queue did to the server.
 #[derive(Default)]
 pub struct Stats {
@@ -127,6 +132,7 @@ pub struct TestConnector {
     roots: Mutex<HashMap<SiteId, PathBuf>>,
     pub stats: Arc<Stats>,
     pub delay: Mutex<Duration>,
+    pub flaky: Arc<FlakyControl>,
 }
 
 impl TestConnector {
@@ -135,6 +141,7 @@ impl TestConnector {
             roots: Mutex::default(),
             stats: Arc::default(),
             delay: Mutex::new(Duration::ZERO),
+            flaky: Arc::default(),
         })
     }
 
@@ -160,13 +167,17 @@ impl Connector for TestConnector {
             .get(&site)
             .cloned()
             .ok_or(TransferError::SiteDeleted)?;
+        if self.flaky.take_connect_failure() {
+            return Err(TransferError::Connect("connection refused".to_owned()));
+        }
         self.stats.connects.fetch_add(1, Ordering::SeqCst);
         let inner = RootedFs::new(root).map_err(|e| TransferError::Connect(e.to_string()))?;
-        Ok(Arc::new(CountingFs {
+        let counting = Arc::new(CountingFs {
             inner,
             stats: self.stats.clone(),
             delay: *self.delay.lock().unwrap(),
-        }))
+        });
+        Ok(Arc::new(FlakyFs::new(counting, self.flaky.clone())))
     }
 }
 
@@ -236,8 +247,13 @@ impl Harness {
             .expect("no conflict was asked within 30 s")
     }
 
-    /// Waits for the queue to go idle.
+    /// Waits for the queue to go idle (20 s of real time).
     pub async fn idle(&mut self) {
+        self.idle_for(Duration::from_secs(20)).await;
+    }
+
+    /// Waits for the queue to go idle; paused-time tests pass a long *virtual* duration.
+    pub async fn idle_for(&mut self, limit: Duration) {
         let wait = async {
             while let Some(event) = self.events.recv().await {
                 match event {
@@ -252,12 +268,9 @@ impl Harness {
             }
             panic!("the event channel closed before the queue went idle");
         };
-        if tokio::time::timeout(Duration::from_secs(20), wait)
-            .await
-            .is_err()
-        {
+        if tokio::time::timeout(limit, wait).await.is_err() {
             panic!(
-                "the queue did not go idle within 20 s; snapshot: {:#?}",
+                "the queue did not go idle within {limit:?}; snapshot: {:#?}",
                 self.queue.snapshot()
             );
         }

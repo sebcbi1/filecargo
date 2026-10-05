@@ -22,6 +22,8 @@ const COMPLETED_CAP: usize = 1_000;
 const IDLE_CONNECTION: Duration = Duration::from_secs(30);
 const EVENT_INTERVAL: Duration = Duration::from_millis(100);
 const SAVE_INTERVAL: Duration = Duration::from_secs(1);
+/// Back-off before each automatic retry of a transient failure; the third failure is final.
+const RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(10)];
 
 pub(crate) enum Command {
     Enqueue(Vec<(TransferId, NewTransfer)>),
@@ -470,8 +472,18 @@ impl Scheduler {
     }
 
     fn fail(&mut self, index: usize, error: TransferError) {
-        let mut slot = self.pending.remove(index);
+        let slot = &mut self.pending[index];
         slot.item.attempts += 1;
+        // A transient failure retries on a fresh connection, resuming from what is on the
+        // target: after 2 s, then 10 s. The third failure is final.
+        if error.is_retryable() && slot.item.attempts <= RETRY_DELAYS.len() as u32 {
+            let delay = RETRY_DELAYS[slot.item.attempts as usize - 1];
+            tracing::info!(target: "filecargo::transfer", id = %slot.item.id, attempt = slot.item.attempts, %error, ?delay, "transfer failed; retrying");
+            slot.retry_at = Some(Instant::now() + delay);
+            slot.item.state = ItemState::Pending;
+            return;
+        }
+        let mut slot = self.pending.remove(index);
         slot.item.state = ItemState::Failed {
             reason: error.to_string(),
             retryable: error.is_retryable(),
