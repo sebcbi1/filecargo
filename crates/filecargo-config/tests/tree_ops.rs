@@ -1,6 +1,8 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers
 use std::fs;
 
+mod common;
+
 use filecargo_config::{
     ConfigError, ConfigStore, Node, NodeId, Paths, Protocol, Site, TreeOp, ValidationError,
 };
@@ -13,7 +15,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let store = ConfigStore::open(Paths::from_override(Some(dir.path().join("cfg")))).unwrap();
+        let store = common::open(Paths::from_override(Some(dir.path().join("cfg")))).unwrap();
         Self { dir, store }
     }
 
@@ -91,7 +93,7 @@ fn sites_in_folders_survive_reopen() {
     let inner = f.folder("Inner", Some(work));
     let s = f.site("prod", Some(inner));
 
-    let reopened = ConfigStore::open(Paths::from_override(Some(f.dir.path().join("cfg")))).unwrap();
+    let reopened = common::open(Paths::from_override(Some(f.dir.path().join("cfg")))).unwrap();
     assert_eq!(reopened.tree(), f.store.tree());
     assert_eq!(reopened.tree().site(s).unwrap().folder, Some(inner));
 }

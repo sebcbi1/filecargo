@@ -4,6 +4,8 @@
 use std::fs;
 use std::thread;
 
+mod common;
+
 use filecargo_config::{ConfigError, ConfigStore, Paths, Protocol, Site, TreeOp};
 
 fn paths(dir: &tempfile::TempDir) -> Paths {
@@ -21,15 +23,15 @@ fn servers_file(dir: &tempfile::TempDir) -> std::path::PathBuf {
 #[test]
 fn stale_store_merges_instead_of_overwriting() {
     let dir = tempfile::tempdir().unwrap();
-    let mut a = ConfigStore::open(paths(&dir)).unwrap();
-    let mut b = ConfigStore::open(paths(&dir)).unwrap();
+    let mut a = common::open(paths(&dir)).unwrap();
+    let mut b = common::open(paths(&dir)).unwrap();
 
     let x = site("X");
     let y = site("Y");
     a.apply(TreeOp::AddSite(x.clone())).unwrap();
     b.apply(TreeOp::AddSite(y.clone())).unwrap();
 
-    let reopened = ConfigStore::open(paths(&dir)).unwrap();
+    let reopened = common::open(paths(&dir)).unwrap();
     assert!(reopened.tree().site(x.id).is_some());
     assert!(reopened.tree().site(y.id).is_some());
     assert!(b.tree().site(x.id).is_some(), "b must have picked up X");
@@ -38,8 +40,8 @@ fn stale_store_merges_instead_of_overwriting() {
 #[test]
 fn reload_picks_up_changes_from_another_instance() {
     let dir = tempfile::tempdir().unwrap();
-    let mut a = ConfigStore::open(paths(&dir)).unwrap();
-    let mut b = ConfigStore::open(paths(&dir)).unwrap();
+    let mut a = common::open(paths(&dir)).unwrap();
+    let mut b = common::open(paths(&dir)).unwrap();
     let x = site("X");
     a.apply(TreeOp::AddSite(x.clone())).unwrap();
 
@@ -58,7 +60,7 @@ fn concurrent_writers_lose_no_operation() {
         .map(|t| {
             let p = p.clone();
             thread::spawn(move || {
-                let mut store = ConfigStore::open(p).unwrap();
+                let mut store = common::open(p).unwrap();
                 for i in 0..PER_THREAD {
                     store
                         .apply(TreeOp::AddSite(site(&format!("t{t}-{i}"))))
@@ -71,7 +73,7 @@ fn concurrent_writers_lose_no_operation() {
         h.join().unwrap();
     }
 
-    let store = ConfigStore::open(p).unwrap();
+    let store = common::open(p).unwrap();
     assert_eq!(store.tree().sites().len(), 2 * PER_THREAD);
 }
 
@@ -82,7 +84,7 @@ fn corrupt_file_reports_line_and_is_never_modified() {
     let bad = "version = 1\nfoo = = 2\n";
     fs::write(servers_file(&dir), bad).unwrap();
 
-    let err = ConfigStore::open(paths(&dir)).unwrap_err();
+    let err = common::open(paths(&dir)).unwrap_err();
     match err {
         ConfigError::Parse { line, .. } => assert_eq!(line, 2),
         other => panic!("expected parse error, got {other}"),
@@ -93,7 +95,7 @@ fn corrupt_file_reports_line_and_is_never_modified() {
 #[test]
 fn apply_after_external_corruption_fails_without_writing() {
     let dir = tempfile::tempdir().unwrap();
-    let mut store = ConfigStore::open(paths(&dir)).unwrap();
+    let mut store = common::open(paths(&dir)).unwrap();
     store.apply(TreeOp::AddSite(site("a"))).unwrap();
 
     let bad = "version = 1\n[[site]\n";
@@ -114,7 +116,7 @@ fn structurally_invalid_file_is_rejected_on_open() {
         "version = 1\n[[site]]\nid = \"7c1e0000-0000-4000-8000-000000000001\"\nname = \"a\"\nprotocol = \"sftp\"\nhost = \"\"\n[site.auth]\nmethod = \"agent\"\n",
     )
     .unwrap();
-    let err = ConfigStore::open(paths(&dir)).unwrap_err();
+    let err = common::open(paths(&dir)).unwrap_err();
     assert!(matches!(err, ConfigError::Invalid(_)), "{err}");
 }
 
@@ -125,7 +127,7 @@ fn newer_file_version_is_rejected_without_writing() {
     let newer = "version = 2\n";
     fs::write(servers_file(&dir), newer).unwrap();
 
-    let err = ConfigStore::open(paths(&dir)).unwrap_err();
+    let err = common::open(paths(&dir)).unwrap_err();
     assert!(
         matches!(
             err,
@@ -146,7 +148,7 @@ fn reset_keeps_a_backup_and_a_fresh_store_works() {
     fs::create_dir_all(dir.path().join("cfg")).unwrap();
     let bad = "not toml at all = =\n";
     fs::write(servers_file(&dir), bad).unwrap();
-    assert!(ConfigStore::open(paths(&dir)).is_err());
+    assert!(common::open(paths(&dir)).is_err());
 
     let backup = ConfigStore::reset(&paths(&dir)).unwrap().unwrap();
     assert_eq!(fs::read_to_string(&backup).unwrap(), bad);
@@ -159,7 +161,7 @@ fn reset_keeps_a_backup_and_a_fresh_store_works() {
     );
     assert!(!servers_file(&dir).exists());
 
-    let mut store = ConfigStore::open(paths(&dir)).unwrap();
+    let mut store = common::open(paths(&dir)).unwrap();
     store.apply(TreeOp::AddSite(site("fresh"))).unwrap();
     assert_eq!(store.tree().sites().len(), 1);
 }

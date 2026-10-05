@@ -1,7 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers
 //! Property test: any sequence of operations keeps the tree valid and durable.
 
-use filecargo_config::{ConfigStore, FolderId, NodeId, Paths, Protocol, ServerTree, Site, TreeOp};
+mod common;
+
+use filecargo_config::{FolderId, NodeId, Paths, Protocol, ServerTree, Site, TreeOp};
 use proptest::prelude::*;
 
 const NAMES: [&str; 5] = ["a", "b", "C", "c", "web"];
@@ -91,7 +93,7 @@ proptest! {
     fn ops_round_trip_through_disk(steps in proptest::collection::vec(step(), 1..25)) {
         let dir = tempfile::tempdir().unwrap();
         let paths = Paths::from_override(Some(dir.path().join("cfg")));
-        let mut store = ConfigStore::open(paths.clone()).unwrap();
+        let mut store = common::open(paths.clone()).unwrap();
 
         for step in &steps {
             let Some(op) = to_op(store.tree(), step) else { continue };
@@ -99,7 +101,7 @@ proptest! {
             match store.apply(op) {
                 // Reopening re-validates every rule, so this also proves the invariants.
                 Ok(_) => {
-                    let reopened = ConfigStore::open(paths.clone()).unwrap();
+                    let reopened = common::open(paths.clone()).unwrap();
                     prop_assert_eq!(reopened.tree(), store.tree());
                 }
                 Err(_) => prop_assert_eq!(store.tree(), &before),

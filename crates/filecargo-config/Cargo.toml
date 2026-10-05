@@ -8,12 +8,25 @@ publish.workspace = true
 
 [dependencies]
 etcetera.workspace = true
+keyring-core.workspace = true
+secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+tracing.workspace = true
 uuid.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store.workspace = true
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+zbus-secret-service-keyring-store.workspace = true
+
 [dev-dependencies]
+tracing-subscriber.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 

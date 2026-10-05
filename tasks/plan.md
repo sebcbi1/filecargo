@@ -66,7 +66,7 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 
 ### Phase 3: Settings and secrets
 - [x] T6: Settings: defaults, validation, persistence (S)
-- [ ] T7: Secrets: store trait, keychain, cleanup cascade, no-leak test (M)
+- [x] T7: Secrets: store trait, keychain, cleanup cascade, no-leak test (M)
 
 ### Checkpoint C: Secrets
 - [ ] AC6, AC7 pass; manual keychain smoke run on macOS
@@ -137,3 +137,18 @@ _Appended per task during implementation: what changed, where, and any deviation
 - **Deviation:** reset is the associated fn `ConfigStore::reset(&Paths) -> Result<Option<PathBuf>>` (spec updated), because `open` fails on a corrupt file.
 - Mutation check: removing the lock makes `concurrent_writers_lose_no_operation` fail 3/3 runs.
 - A rejected op still creates `<config>/` and `.lock` (the lock is taken before validation); `servers.toml` is untouched.
+
+### T6 Settings (done)
+- `settings.rs`: `Settings { transfers, connection, ui, log }` plus `ConflictRule` and `LogLevel`. Every struct has serde defaults, so a missing file or key falls back to defaults and unknown keys are ignored. `ConfigStore::settings()` and `update_settings(|s| ..)` use the same lock → reload → validate → atomic-write path as the tree. `reload()` now refreshes both files.
+- Validation (`ValidationError::InvalidSetting { field, rule }`): `max_concurrent` 1..=10, `timeout_secs` > 0, `keepalive_secs` > 0. An invalid value in the *file* is an error on `open`, not a silent default.
+- The file struct uses explicit fields, **not** `#[serde(flatten)]`: flatten discards the error span, so parse errors reported line 1 instead of the real line (caught by a test).
+- A corrupt `settings.toml` makes `open` fail, and `ConfigStore::reset` only backs up `servers.toml`. Not needed yet; add a settings reset when a front-end needs it.
+
+### T7 Secrets (done)
+- `secrets.rs`: `SecretKey { Password(SiteId), Passphrase(SiteId) }` (account `site:<uuid>:password`), `SecretStore` trait (`Debug + Send + Sync`), `MemoryStore` (tests), `KeyringStore` (keyring-core, service `filecargo`), `UnavailableStore`, and `default_secret_store()`, which falls back to `UnavailableStore` with one warning when there is no keychain. `SecretString` and `ExposeSecret` are re-exported.
+- **API change:** `ConfigStore::open(paths, secrets: Arc<dyn SecretStore>)`; `ConfigStore::secrets()` exposes the store. Integration tests open through `tests/common/mod.rs`.
+- **Cascade, always after the file write succeeds; keychain failures are warnings, never errors:** `Delete` (sites and folder contents) removes both secret kinds; `UpdateSite` that turns `remember` / `remember_passphrase` off removes that secret; `Duplicate` copies both kinds to the new site.
+- Platform stores: `apple-native-keyring-store` (feature `keychain`; file keychain, no entitlements needed), `windows-native-keyring-store`, `zbus-secret-service-keyring-store` (feature `crypto-rust`, so no system OpenSSL). All three are target-specific dependencies.
+- `keyring-core` error mapping never formats variants that can carry secret bytes (`BadEncoding`, ...).
+- Verified: leak test fails when a secret is logged (mutation check); `cargo run -p filecargo-config --example keyring_smoke` passes on the real macOS Keychain (service `filecargo-smoke`, deleted afterwards).
+- `cargo update` was needed once: the local registry index was stale (`security-framework` 3.7). `Cargo.lock` is committed.

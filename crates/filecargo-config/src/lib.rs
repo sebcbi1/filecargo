@@ -4,6 +4,7 @@ mod error;
 mod fsio;
 mod model;
 mod paths;
+mod secrets;
 mod settings;
 mod store;
 mod tree;
@@ -11,6 +12,10 @@ mod tree;
 pub use error::{ConfigError, ValidationError};
 pub use model::{Auth, Folder, FolderId, FtpMode, NodeId, Protocol, Site, SiteId};
 pub use paths::Paths;
+pub use secrets::{
+    ExposeSecret, KeyringStore, MemoryStore, SERVICE, SecretError, SecretKey, SecretStore,
+    SecretString, UnavailableStore, default_secret_store,
+};
 pub use settings::{
     ConflictRule, ConnectionSettings, LogLevel, LogSettings, Settings, TransferSettings, UiSettings,
 };

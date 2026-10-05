@@ -1,14 +1,16 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::ConfigError;
 use crate::fsio;
-use crate::model::{Folder, NodeId, Site};
+use crate::model::{Auth, Folder, NodeId, Site};
 use crate::paths::Paths;
+use crate::secrets::{SecretKey, SecretStore};
 use crate::settings::{ConnectionSettings, LogSettings, Settings, TransferSettings, UiSettings};
-use crate::tree::{ServerTree, TreeOp};
+use crate::tree::{Outcome, ServerTree, TreeOp};
 
 const FILE_VERSION: u32 = 1;
 
@@ -76,6 +78,7 @@ pub struct ConfigStore {
     paths: Paths,
     tree: ServerTree,
     settings: Settings,
+    secrets: Arc<dyn SecretStore>,
     /// Bytes of `servers.toml` as last read or written (`None` = file did not exist).
     loaded: Option<Vec<u8>>,
     /// Same for `settings.toml`.
@@ -86,7 +89,7 @@ impl ConfigStore {
     /// Loads the store. A missing `servers.toml` yields an empty tree and writes nothing.
     ///
     /// A corrupt or newer-versioned file is an error and is never touched; see [`Self::reset`].
-    pub fn open(paths: Paths) -> Result<Self, ConfigError> {
+    pub fn open(paths: Paths, secrets: Arc<dyn SecretStore>) -> Result<Self, ConfigError> {
         let loaded = fsio::read_optional(&paths.servers())?;
         let tree = parse_tree(&paths, loaded.as_deref())?;
         let settings_loaded = fsio::read_optional(&paths.settings())?;
@@ -95,6 +98,7 @@ impl ConfigStore {
             paths,
             tree,
             settings,
+            secrets,
             loaded,
             settings_loaded,
         })
@@ -106,6 +110,10 @@ impl ConfigStore {
 
     pub fn settings(&self) -> &Settings {
         &self.settings
+    }
+
+    pub fn secrets(&self) -> &dyn SecretStore {
+        &*self.secrets
     }
 
     /// Re-reads `servers.toml` and `settings.toml` if another instance changed them. On error
@@ -151,6 +159,10 @@ impl ConfigStore {
     pub fn apply(&mut self, op: TreeOp) -> Result<NodeId, ConfigError> {
         let _lock = fsio::lock_exclusive(&self.paths.lock())?;
         self.reload()?;
+        let previous = match &op {
+            TreeOp::UpdateSite(site) => self.tree.site(site.id).cloned(),
+            _ => None,
+        };
         let mut next = self.tree.clone();
         let outcome = next.apply(op)?;
         next.validate()?;
@@ -158,7 +170,50 @@ impl ConfigStore {
         fsio::write_atomic(&self.paths.servers(), &bytes)?;
         self.tree = next;
         self.loaded = Some(bytes);
+        self.sync_secrets(&outcome, previous.as_ref());
         Ok(outcome.node)
+    }
+
+    /// Keeps the keychain in step with a committed tree change. Runs after the file write, so a
+    /// keychain failure is logged and never fails the operation: the file is the source of
+    /// truth, and a leftover keychain entry is harmless.
+    fn sync_secrets(&self, outcome: &Outcome, previous: Option<&Site>) {
+        for &id in &outcome.removed_sites {
+            self.forget(SecretKey::Password(id));
+            self.forget(SecretKey::Passphrase(id));
+        }
+        if let (Some(from), NodeId::Site(to)) = (outcome.duplicated_from, outcome.node) {
+            self.copy_secret(SecretKey::Password(from), SecretKey::Password(to));
+            self.copy_secret(SecretKey::Passphrase(from), SecretKey::Passphrase(to));
+        }
+        if let (Some(old), NodeId::Site(id)) = (previous, outcome.node)
+            && let Some(new) = self.tree.site(id)
+        {
+            if remembers_password(&old.auth) && !remembers_password(&new.auth) {
+                self.forget(SecretKey::Password(id));
+            }
+            if remembers_passphrase(&old.auth) && !remembers_passphrase(&new.auth) {
+                self.forget(SecretKey::Passphrase(id));
+            }
+        }
+    }
+
+    fn forget(&self, key: SecretKey) {
+        if let Err(error) = self.secrets.delete(&key) {
+            tracing::warn!(?key, %error, "could not delete keychain entry");
+        }
+    }
+
+    fn copy_secret(&self, from: SecretKey, to: SecretKey) {
+        match self.secrets.get(&from) {
+            Ok(Some(value)) => {
+                if let Err(error) = self.secrets.set(&to, &value) {
+                    tracing::warn!(key = ?to, %error, "could not copy keychain entry");
+                }
+            }
+            Ok(None) => {}
+            Err(error) => tracing::warn!(key = ?from, %error, "could not read keychain entry"),
+        }
     }
 
     /// Moves an unreadable `servers.toml` aside to `servers.toml.bak-<unix-seconds>` so a fresh
@@ -182,6 +237,20 @@ impl ConfigStore {
         fsio::rename(&path, &backup)?;
         Ok(Some(backup))
     }
+}
+
+fn remembers_password(auth: &Auth) -> bool {
+    matches!(auth, Auth::Password { remember: true })
+}
+
+fn remembers_passphrase(auth: &Auth) -> bool {
+    matches!(
+        auth,
+        Auth::KeyFile {
+            remember_passphrase: true,
+            ..
+        }
+    )
 }
 
 fn parse_tree(paths: &Paths, bytes: Option<&[u8]>) -> Result<ServerTree, ConfigError> {
@@ -259,6 +328,10 @@ mod tests {
     use crate::error::ValidationError;
     use crate::model::{Auth, Protocol};
 
+    fn open(paths: Paths) -> Result<ConfigStore, ConfigError> {
+        ConfigStore::open(paths, Arc::new(crate::secrets::MemoryStore::new()))
+    }
+
     fn paths(dir: &tempfile::TempDir) -> Paths {
         Paths::from_override(Some(dir.path().join("cfg")))
     }
@@ -270,7 +343,7 @@ mod tests {
     #[test]
     fn fresh_dir_opens_empty_and_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let store = ConfigStore::open(paths(&dir)).unwrap();
+        let store = open(paths(&dir)).unwrap();
         assert!(store.tree().sites().is_empty());
         assert!(!dir.path().join("cfg").exists());
     }
@@ -286,23 +359,23 @@ mod tests {
             remember_passphrase: true,
         };
         s.remote_dir = Some("/var/www".into());
-        let mut store = ConfigStore::open(paths(&dir)).unwrap();
+        let mut store = open(paths(&dir)).unwrap();
         store.apply(TreeOp::AddSite(s.clone())).unwrap();
 
-        let reopened = ConfigStore::open(paths(&dir)).unwrap();
+        let reopened = open(paths(&dir)).unwrap();
         assert_eq!(reopened.tree().site(s.id), Some(&s));
     }
 
     #[test]
     fn update_site_survives_reopen() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = ConfigStore::open(paths(&dir)).unwrap();
+        let mut store = open(paths(&dir)).unwrap();
         let mut s = site("prod");
         store.apply(TreeOp::AddSite(s.clone())).unwrap();
         s.host = "other.example.com".into();
         store.apply(TreeOp::UpdateSite(s.clone())).unwrap();
 
-        let reopened = ConfigStore::open(paths(&dir)).unwrap();
+        let reopened = open(paths(&dir)).unwrap();
         assert_eq!(
             reopened.tree().site(s.id).unwrap().host,
             "other.example.com"
@@ -320,7 +393,7 @@ mod tests {
             remember_passphrase: true,
         };
         s.remote_dir = Some("/var/www".into());
-        let mut store = ConfigStore::open(paths(&dir)).unwrap();
+        let mut store = open(paths(&dir)).unwrap();
         store.apply(TreeOp::AddSite(s)).unwrap();
 
         let text = fs::read_to_string(dir.path().join("cfg/servers.toml")).unwrap();
@@ -365,7 +438,7 @@ mod tests {
         ];
         for (label, bad) in cases {
             let dir = tempfile::tempdir().unwrap();
-            let mut store = ConfigStore::open(paths(&dir)).unwrap();
+            let mut store = open(paths(&dir)).unwrap();
             let err = store.apply(TreeOp::AddSite(bad)).unwrap_err();
             assert!(matches!(err, ConfigError::Invalid(_)), "{label}: {err}");
             assert!(!dir.path().join("cfg/servers.toml").exists(), "{label}");
@@ -376,7 +449,7 @@ mod tests {
     #[test]
     fn rejected_update_leaves_file_bytes_unchanged() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = ConfigStore::open(paths(&dir)).unwrap();
+        let mut store = open(paths(&dir)).unwrap();
         let mut s = site("a");
         store.apply(TreeOp::AddSite(s.clone())).unwrap();
         let before = fs::read(dir.path().join("cfg/servers.toml")).unwrap();
@@ -396,7 +469,7 @@ mod tests {
     #[test]
     fn update_of_unknown_site_is_rejected() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = ConfigStore::open(paths(&dir)).unwrap();
+        let mut store = open(paths(&dir)).unwrap();
         let err = store.apply(TreeOp::UpdateSite(site("ghost"))).unwrap_err();
         assert!(matches!(
             err,
@@ -407,7 +480,7 @@ mod tests {
     #[test]
     fn duplicate_sibling_names_are_rejected_case_insensitively() {
         let dir = tempfile::tempdir().unwrap();
-        let mut store = ConfigStore::open(paths(&dir)).unwrap();
+        let mut store = open(paths(&dir)).unwrap();
         store.apply(TreeOp::AddSite(site("Prod"))).unwrap();
         let err = store.apply(TreeOp::AddSite(site("prod"))).unwrap_err();
         assert!(matches!(
