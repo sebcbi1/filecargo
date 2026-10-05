@@ -37,7 +37,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 ## Task List
 ### Phase 1: Skeleton
 - [x] T1: Crate, `App::start`, actor loop, `watch` snapshots, coalescing, `shutdown`; startup with config errors + `ResetConfig` (M)
-- [ ] T2: Log layer, ring buffer, `FILECARGO_LOG_FILE` (S)
+- [x] T2: Log layer, ring buffer, `FILECARGO_LOG_FILE` (S)
 - [ ] T3: Tree commands, `ImportFileZilla` (→ `Message` with the report), `SetSitePassword` (S)
 ### Checkpoint A: AC1, AC2 green; snapshot API reviewed (UI authors depend on it)
 ### Phase 2: Browsing
@@ -79,3 +79,8 @@ _Appended per task during implementation._
 - `AppHandle::shutdown(timeout)`: idempotent (the runtime sits in a shared `Mutex<Option<_>>`), asks the actor to finish, then `Runtime::shutdown_timeout`, so a never-ending async task or a stuck blocking task cannot hold it past the timeout (tested). It must be called from outside the runtime.
 - Tests are plain `#[test]`s: `Fixture::wait_for` blocks on the app's own runtime handle. 7 tests (fresh start, configured/bad start dir, corrupt `servers.toml` / `settings.toml` + reset, newer-version file untouched, shutdown with hung tasks, ≤ 35 snapshots/s under a burst of 200 changes).
 - Fixed on the way: `tokio::time` values must be created inside the runtime (`runtime.enter()` in `start`, `block_on(async { timeout(..) })` in `shutdown`).
+
+### T2 Logging (done)
+- `logging.rs`: `LogBuffer` (ring of 5,000 `LogLine { time, level: config::LogLevel, target, message }`, a generation counter, and the **live level** as an atomic), `LogLayer` (a `tracing_subscriber::Layer`; formats `message` plus extra fields as `key=value`; optional file sink), `init_logging(&buffer)` for binaries (installs a registry and honors `FILECARGO_LOG_FILE`; returns `false` if a global subscriber already exists). `App::start` seeds the level from the settings and `UpdateSettings` changes it live; `AppState::log_generation` is refreshed at every publish.
+- The `log` crate is **not** bridged, by design (see the module doc): the FTP library's `PASS` traces are compiled out and nothing from dependencies below our own `tracing` events is shown.
+- 6 tests (target/level/fields, ring overflow, level filtering and live change through `UpdateSettings`, snapshot generation, file append).

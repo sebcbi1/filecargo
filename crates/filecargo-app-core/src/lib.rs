@@ -8,7 +8,7 @@ mod state;
 
 pub use app::{App, AppHandle, StartOptions};
 pub use command::Command;
-pub use logging::{LogBuffer, LogLine};
+pub use logging::{LogBuffer, LogLayer, LogLine, init as init_logging};
 pub use session::SessionFactory;
 pub use state::{
     AppState, ConnectStep, Level, Notice, NoticeId, Pane, PaneId, Prompt, PromptAnswer, PromptId,

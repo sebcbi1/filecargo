@@ -79,6 +79,7 @@ impl App {
             .unwrap_or_default();
         let servers = store.as_ref().map(|s| s.tree().clone()).unwrap_or_default();
 
+        let settings_level = settings.log.level;
         let local_path = start_dir(&settings);
         let state = AppState {
             startup_error,
@@ -95,6 +96,7 @@ impl App {
         };
 
         let log = LogBuffer::new();
+        log.set_level(settings_level);
         let (commands_tx, commands_rx) = mpsc::unbounded_channel();
         let (publisher, snapshots) = watch::channel(Arc::new(state.clone()));
         let mut core = Core {
@@ -407,6 +409,7 @@ impl Core {
         match store.update_settings(|current| *current = settings) {
             Ok(()) => {
                 self.state.settings = Arc::new(store.settings().clone());
+                self.log.set_level(self.state.settings.log.level);
                 self.changed();
             }
             Err(error) => self.message(Level::Error, "Settings not saved", error.to_string()),
