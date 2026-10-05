@@ -4,6 +4,9 @@ use filecargo_app_core::prelude::*;
 use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::Rect;
 
+use crate::dialog::{
+    ConfirmDialog, Dialog, InputDialog, InputPurpose, MovePicker, Outcome, SiteEditor,
+};
 use crate::keymap::{self, Action, Context};
 use crate::layout;
 use crate::pane::{PaneView, pane_view};
@@ -299,6 +302,29 @@ fn files_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command
                 vec![Command::Delete { names }]
             }
         }
+        Action::MakeDir if focus == Focus::Remote => {
+            ui.dialog = Some(Dialog::Input(InputDialog::new(
+                "New remote folder",
+                "Name",
+                "",
+                InputPurpose::Mkdir,
+            )));
+            Vec::new()
+        }
+        Action::Rename if focus == Focus::Remote => {
+            let cursor = ui.pane(focus).map_or(0, |p| p.cursor);
+            if let Some(entry) = view.entry(cursor) {
+                ui.dialog = Some(Dialog::Input(InputDialog::new(
+                    "Rename",
+                    "New name",
+                    &entry.name,
+                    InputPurpose::RenameRemote {
+                        from: entry.name.clone(),
+                    },
+                )));
+            }
+            Vec::new()
+        }
         Action::ToggleHidden => {
             let mut settings = (*app.settings).clone();
             settings.ui.show_hidden = !settings.ui.show_hidden;
@@ -385,6 +411,59 @@ fn tree_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command>
             None => {}
         },
         Action::Disconnect => commands.push(Command::Disconnect),
+        Action::NewSite => {
+            ui.dialog = Some(Dialog::Site(Box::new(SiteEditor::new_site(target_folder(
+                app, &current,
+            )))));
+        }
+        Action::NewFolder => {
+            ui.dialog = Some(Dialog::Input(InputDialog::new(
+                "New folder",
+                "Name",
+                "",
+                InputPurpose::NewFolder {
+                    parent: target_folder(app, &current),
+                },
+            )));
+        }
+        Action::EditSite => {
+            if let Some(tree::TreeRow {
+                kind: RowKind::Site { id, .. },
+                ..
+            }) = &current
+                && let Some(site) = app.servers.site(*id)
+            {
+                ui.dialog = Some(Dialog::Site(Box::new(SiteEditor::edit(site))));
+            }
+        }
+        Action::RenameNode => {
+            if let Some(row) = &current {
+                ui.dialog = Some(Dialog::Input(InputDialog::new(
+                    "Rename",
+                    "Name",
+                    &row.name,
+                    InputPurpose::RenameNode(row.node()),
+                )));
+            }
+        }
+        Action::MoveNode => {
+            if let Some(row) = &current {
+                ui.dialog = Some(Dialog::Move(MovePicker::new(&app.servers, row.node())));
+            }
+        }
+        Action::DeleteNode => {
+            if let Some(row) = &current {
+                let what = match row.kind {
+                    RowKind::Folder { .. } => "folder (and everything in it)",
+                    RowKind::Site { .. } => "site",
+                };
+                ui.dialog = Some(Dialog::Confirm(ConfirmDialog {
+                    title: "Delete".to_owned(),
+                    body: format!("Delete the {what} \"{}\"?", row.name),
+                    op: TreeOp::Delete { node: row.node() },
+                }));
+            }
+        }
         Action::DuplicateSite => {
             if let Some(tree::TreeRow {
                 kind: RowKind::Site { id, .. },
@@ -407,6 +486,32 @@ fn tree_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command>
     commands
 }
 
+/// The folder a new node goes to: the folder under the cursor, or the one holding the site.
+fn target_folder(app: &AppState, current: &Option<tree::TreeRow>) -> Option<FolderId> {
+    match current.as_ref()?.kind {
+        RowKind::Folder { id, .. } => Some(id),
+        RowKind::Site { id, .. } => app.servers.site(id).and_then(|s| s.folder),
+    }
+}
+
+/// Keys while a dialog is open go to it alone.
+fn dialog_key(ui: &mut UiState, key: KeyEvent) -> Vec<Command> {
+    let Some(dialog) = ui.dialog.as_mut() else {
+        return Vec::new();
+    };
+    match dialog.on_key(key) {
+        Outcome::Keep => Vec::new(),
+        Outcome::Close => {
+            ui.dialog = None;
+            Vec::new()
+        }
+        Outcome::Run(commands) => {
+            ui.dialog = None;
+            commands
+        }
+    }
+}
+
 pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> {
     match event {
         Event::Resize(width, height) => {
@@ -415,6 +520,9 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
             Vec::new()
         }
         Event::Key(key) => {
+            if ui.dialog.is_some() {
+                return dialog_key(ui, key);
+            }
             let Some(action) = keymap::lookup(context_for(ui), key) else {
                 return Vec::new();
             };
@@ -460,7 +568,13 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
                 },
             }
         }
-        Event::Mouse(_) | Event::Paste(_) => Vec::new(),
+        Event::Paste(text) => {
+            if let Some(dialog) = ui.dialog.as_mut() {
+                dialog.paste(&text);
+            }
+            Vec::new()
+        }
+        Event::Mouse(_) => Vec::new(),
     }
 }
 
@@ -950,5 +1064,252 @@ mod tests {
         let mut ui = synced(100, 30, &app);
         on_event(&mut ui, &app, Event::Resize(80, 24));
         assert_eq!(ui.size, (80, 24));
+    }
+}
+
+#[cfg(test)]
+mod dialog_tests {
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+    use super::*;
+    use crate::test_support::{app, connected_app, sample_tree, synced};
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ch(c: char) -> Event {
+        key(KeyCode::Char(c))
+    }
+
+    fn tree_app() -> AppState {
+        let mut app = app();
+        app.servers = std::sync::Arc::new(sample_tree());
+        app
+    }
+
+    /// Tree focused, folders open: 0 Personal, 1 blog, 2 Work, 3 prod-web, 4 staging, 5 home-nas.
+    fn tree_ui(app: &AppState) -> UiState {
+        let mut ui = synced(120, 30, app);
+        ui.focus = Focus::Tree;
+        ui.tree.expanded = app.servers.folders().iter().map(|f| f.id).collect();
+        ui
+    }
+
+    fn type_text(ui: &mut UiState, app: &AppState, text: &str) {
+        for c in text.chars() {
+            on_event(ui, app, ch(c));
+        }
+    }
+
+    #[test]
+    fn n_opens_the_site_editor_and_enter_with_a_filled_form_adds_the_site_in_the_folder() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        ui.tree.cursor = 2; // Work
+        assert!(on_event(&mut ui, &app, ch('n')).is_empty());
+        assert!(matches!(ui.dialog, Some(Dialog::Site(_))));
+        type_text(&mut ui, &app, "extra");
+        on_event(&mut ui, &app, key(KeyCode::Tab));
+        on_event(&mut ui, &app, key(KeyCode::Tab));
+        type_text(&mut ui, &app, "extra.example.org");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(ui.dialog.is_none());
+        let Some(Command::Tree(TreeOp::AddSite(site))) = commands.first() else {
+            panic!("{commands:?}")
+        };
+        let work = app
+            .servers
+            .folders()
+            .iter()
+            .find(|f| f.name == "Work")
+            .unwrap();
+        assert_eq!(
+            site.folder,
+            Some(work.id),
+            "created in the folder under the cursor"
+        );
+    }
+
+    #[test]
+    fn keys_go_to_the_dialog_only_and_escape_closes_it_without_commands() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        on_event(&mut ui, &app, ch('n'));
+        // `q` must be typed into the name, not quit
+        let commands = on_event(&mut ui, &app, ch('q'));
+        assert!(commands.is_empty() && !ui.quit_requested);
+        assert!(on_event(&mut ui, &app, key(KeyCode::Esc)).is_empty());
+        assert!(ui.dialog.is_none());
+        // and the tree handles keys again
+        on_event(&mut ui, &app, ch('j'));
+        assert_eq!(ui.tree.cursor, 1);
+    }
+
+    #[test]
+    fn a_validation_error_keeps_the_dialog_open() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        on_event(&mut ui, &app, ch('n'));
+        assert!(on_event(&mut ui, &app, key(KeyCode::Enter)).is_empty());
+        let Some(Dialog::Site(editor)) = &ui.dialog else {
+            panic!()
+        };
+        assert_eq!(editor.form.error.as_deref(), Some("Give the site a name."));
+    }
+
+    #[test]
+    fn e_edits_the_site_under_the_cursor_and_only_sites() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        ui.tree.cursor = 0; // a folder
+        on_event(&mut ui, &app, ch('e'));
+        assert!(ui.dialog.is_none());
+        ui.tree.cursor = 3; // prod-web
+        on_event(&mut ui, &app, ch('e'));
+        let Some(Dialog::Site(editor)) = &ui.dialog else {
+            panic!()
+        };
+        assert_eq!(editor.form.text_of("name"), "prod-web");
+        assert_eq!(editor.form.text_of("host"), "prod-web.example.org");
+    }
+
+    #[test]
+    fn rename_new_folder_move_and_delete_build_tree_operations() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        ui.tree.cursor = 5; // home-nas
+
+        on_event(&mut ui, &app, ch('r'));
+        type_text(&mut ui, &app, "2");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::Tree(TreeOp::Rename { name, .. })] if name == "home-nas2"),
+            "{commands:?}"
+        );
+
+        on_event(&mut ui, &app, ch('N'));
+        type_text(&mut ui, &app, "Misc");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::Tree(TreeOp::AddFolder { name, parent: None })] if name == "Misc"),
+            "{commands:?}"
+        );
+
+        on_event(&mut ui, &app, ch('m'));
+        let Some(Dialog::Move(picker)) = &ui.dialog else {
+            panic!()
+        };
+        assert_eq!(picker.choices.len(), 3, "top level, Personal, Work");
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(
+                &commands[..],
+                [Command::Tree(TreeOp::Move {
+                    parent: Some(_),
+                    ..
+                })]
+            ),
+            "{commands:?}"
+        );
+
+        on_event(&mut ui, &app, key(KeyCode::Delete));
+        assert!(matches!(ui.dialog, Some(Dialog::Confirm(_))));
+        assert!(on_event(&mut ui, &app, ch('n')).is_empty());
+        assert!(ui.dialog.is_none());
+        on_event(&mut ui, &app, key(KeyCode::Delete));
+        let commands = on_event(&mut ui, &app, ch('y'));
+        assert!(
+            matches!(&commands[..], [Command::Tree(TreeOp::Delete { .. })]),
+            "{commands:?}"
+        );
+    }
+
+    #[test]
+    fn a_folder_cannot_be_moved_into_itself_or_below() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = filecargo_config::ConfigStore::open(
+            Paths::from_override(Some(dir.path().to_path_buf())),
+            std::sync::Arc::new(filecargo_config::MemoryStore::new()),
+        )
+        .unwrap();
+        let a = match store
+            .apply(TreeOp::AddFolder {
+                name: "A".into(),
+                parent: None,
+            })
+            .unwrap()
+        {
+            NodeId::Folder(id) => id,
+            NodeId::Site(_) => unreachable!(),
+        };
+        store
+            .apply(TreeOp::AddFolder {
+                name: "B".into(),
+                parent: Some(a),
+            })
+            .unwrap();
+        store
+            .apply(TreeOp::AddFolder {
+                name: "C".into(),
+                parent: None,
+            })
+            .unwrap();
+        let tree = store.tree().clone();
+        let picker = MovePicker::new(&tree, NodeId::Folder(a));
+        let names: Vec<&str> = picker.choices.iter().map(|c| c.1.as_str()).collect();
+        assert_eq!(names, ["/ (top level)", "/C"], "A and A/B are excluded");
+        assert_eq!(picker.cursor, 0, "starts on the current parent");
+    }
+
+    #[test]
+    fn f7_and_f2_on_the_remote_pane_open_input_dialogs_and_do_nothing_locally() {
+        let app = connected_app();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Remote;
+        ui.remote.cursor = 2; // index.php
+        on_event(&mut ui, &app, key(KeyCode::F(7)));
+        type_text(&mut ui, &app, "new");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::Mkdir { name }] if name == "new"),
+            "{commands:?}"
+        );
+
+        on_event(&mut ui, &app, key(KeyCode::F(2)));
+        let Some(Dialog::Input(input)) = &ui.dialog else {
+            panic!()
+        };
+        assert_eq!(
+            input.form.text_of("value"),
+            "index.php",
+            "pre-filled with the current name"
+        );
+        type_text(&mut ui, &app, "x");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::Rename { from, to }] if from == "index.php" && to == "index.phpx"),
+            "{commands:?}"
+        );
+
+        ui.focus = Focus::Local;
+        on_event(&mut ui, &app, key(KeyCode::F(7)));
+        assert!(
+            ui.dialog.is_none(),
+            "the local pane has no remote operations"
+        );
+    }
+
+    #[test]
+    fn pasting_goes_into_the_open_dialog() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        on_event(&mut ui, &app, ch('n'));
+        on_event(&mut ui, &app, Event::Paste("pasted name".to_owned()));
+        let Some(Dialog::Site(editor)) = &ui.dialog else {
+            panic!()
+        };
+        assert_eq!(editor.form.text_of("name"), "pasted name");
     }
 }

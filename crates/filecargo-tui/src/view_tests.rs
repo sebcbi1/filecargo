@@ -174,3 +174,73 @@ fn a_failed_connection_shows_the_error_in_the_title() {
     let ui = synced(100, 30, &app);
     insta::assert_snapshot!(draw(&ui, &app));
 }
+
+fn dialog_ui(
+    app: &filecargo_app_core::prelude::AppState,
+    dialog: crate::dialog::Dialog,
+) -> crate::ui_state::UiState {
+    let mut ui = synced(100, 30, app);
+    ui.dialog = Some(dialog);
+    ui
+}
+
+#[test]
+fn the_site_editor_shows_only_the_fields_of_the_chosen_login() {
+    use crate::dialog::{Dialog, SiteEditor};
+    let app = with_servers();
+    let ui = dialog_ui(&app, Dialog::Site(Box::new(SiteEditor::new_site(None))));
+    insta::assert_snapshot!(draw(&ui, &app));
+}
+
+#[test]
+fn the_site_editor_shows_validation_errors_and_hides_a_typed_password() {
+    use crate::dialog::{Dialog, SiteEditor};
+    let app = with_servers();
+    let mut editor = SiteEditor::new_site(None);
+    editor.form.field_mut("name").unwrap().set_text("work");
+    editor
+        .form
+        .field_mut("password")
+        .unwrap()
+        .set_text("hunter2");
+    editor.form.focus = 6;
+    editor.form.error = Some("Enter a host.".to_owned());
+    let ui = dialog_ui(&app, Dialog::Site(Box::new(editor)));
+    let screen = draw(&ui, &app);
+    assert!(!screen.contains("hunter2"));
+    insta::assert_snapshot!(screen);
+}
+
+#[test]
+fn the_delete_confirmation_and_the_move_picker_are_centered_boxes() {
+    use crate::dialog::{ConfirmDialog, Dialog, MovePicker};
+    use filecargo_app_core::prelude::{NodeId, TreeOp};
+    let app = with_servers();
+    let id = crate::test_support::site_id(&app.servers, "staging");
+    let confirm = Dialog::Confirm(ConfirmDialog {
+        title: "Delete".to_owned(),
+        body: "Delete the site \"staging\"?".to_owned(),
+        op: TreeOp::Delete {
+            node: NodeId::Site(id),
+        },
+    });
+    insta::assert_snapshot!("confirm", draw(&dialog_ui(&app, confirm), &app));
+    let picker = Dialog::Move(MovePicker::new(&app.servers, NodeId::Site(id)));
+    insta::assert_snapshot!("move_picker", draw(&dialog_ui(&app, picker), &app));
+}
+
+#[test]
+fn an_input_dialog_shows_the_cursor_in_the_text() {
+    use crate::dialog::{Dialog, InputDialog, InputPurpose};
+    let app = connected_app();
+    let ui = dialog_ui(
+        &app,
+        Dialog::Input(InputDialog::new(
+            "Rename",
+            "New name",
+            "index.php",
+            InputPurpose::Mkdir,
+        )),
+    );
+    insta::assert_snapshot!(draw(&ui, &app));
+}

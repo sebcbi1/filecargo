@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use crate::dialog::Dialog;
 use crate::tree::TreeUi;
 
 /// The area keys go to.
@@ -38,6 +39,8 @@ pub struct UiState {
     pub tree_override: Option<bool>,
     pub maximize_bottom: bool,
     pub tree: TreeUi,
+    /// The modal dialog on top of everything, if any; it takes every key.
+    pub dialog: Option<Dialog>,
     pub local: PaneUi,
     pub remote: PaneUi,
     /// Whether the last snapshot had a live session (to move the focus when one appears).
@@ -59,6 +62,7 @@ impl UiState {
             tree_override: None,
             maximize_bottom: false,
             tree: TreeUi::default(),
+            dialog: None,
             local: PaneUi::default(),
             remote: PaneUi::default(),
             was_connected: false,

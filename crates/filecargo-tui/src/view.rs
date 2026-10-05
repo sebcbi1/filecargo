@@ -13,12 +13,12 @@ use crate::tree::{self, RowKind};
 use crate::ui_state::{Focus, PaneUi, UiState};
 
 /// Colors only when allowed; emphasis otherwise comes from bold / reverse / markers.
-struct Look {
+pub(crate) struct Look {
     color: bool,
 }
 
 impl Look {
-    fn tint(&self, color: Color) -> Style {
+    pub(crate) fn tint(&self, color: Color) -> Style {
         if self.color {
             Style::new().fg(color)
         } else {
@@ -26,7 +26,7 @@ impl Look {
         }
     }
 
-    fn border(&self, focused: bool) -> Style {
+    pub(crate) fn border(&self, focused: bool) -> Style {
         match (focused, self.color) {
             (true, true) => Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             (true, false) => Style::new().add_modifier(Modifier::BOLD),
@@ -69,6 +69,9 @@ pub fn render(frame: &mut Frame, ui: &UiState, app: &AppState) {
         &look,
     );
     frame.render_widget(Paragraph::new(" q quit  Tab focus"), areas.status);
+    if let Some(dialog) = &ui.dialog {
+        crate::dialog_view::render(frame, area, dialog, &look);
+    }
 }
 
 fn placeholder(frame: &mut Frame, area: Rect, title: &str, focused: bool, look: &Look) {

@@ -32,7 +32,7 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 ### Checkpoint A: binary browses local files; AC3, AC5 green; first snapshots reviewed — reached
 ### Phase 2: Servers and sessions
 - [x] T3: Server tree (`tui-tree-widget`), tree bindings, connect/disconnect, remote pane (M)
-- [ ] T4: Form toolkit + site editor (new/edit) + new folder/rename/move/delete dialogs (M)
+- [x] T4: Form toolkit + site editor (new/edit) + new folder/rename/move/delete dialogs (M)
 - [ ] T5: Prompt dialogs for every `PromptKind` + chmod, go-to-path, import dialogs (M)
 ### Checkpoint B: connect to a site with password + host-key prompt, browse, and edit sites, all in the binary
 ### Phase 3: Transfers, log, terminal, polish
@@ -79,3 +79,13 @@ _Appended per task during implementation._
 - The focus moves from the tree to the remote pane when a connection comes up (once; it does not keep stealing it). Deleting folders elsewhere prunes the expansion set and clamps the cursor.
 - View: `Servers` list (`▾`/`▸` folders in bold, `●` connected in green, `◌` connecting, `✗` failed, empty-tree hint), remote title carries the state (`Remote sftp://host/path`, `Remote (authenticating prod-web…)`, `Remote (failed: …)`, `Remote (not connected)`), placeholder text per state. The `site_id` / `sample_tree` fixtures live in `test_support`.
 - 39 unit tests (12 new reducer tests for the tree and 4 new snapshots: disconnected with tree, connecting, connected listing, failed).
+
+### T4 Forms + site editor + simple dialogs (done)
+- `form.rs`: `Form` of `Field`s (text, masked, checkbox, select) with one focus order over the *visible* fields (`Tab`/`Down`, `BackTab`/`Up`), cursor editing by character (Left/Right/Home/End/Backspace/Delete, `Ctrl-u` clears), `Space` toggles / cycles, `Enter` submits, `Esc` cancels, paste inserts printable text. An error is shown under the fields and cleared by the next key.
+- `dialog.rs`: `Dialog::{Site, Input, Confirm, Move}`, each turning keys into `Outcome::{Keep, Close, Run(Vec<Command>)}` (pure). `UiState.dialog` takes **every** key and paste while open (so `q` types a `q`).
+  - Site editor: name, protocol, host, port (blank = default), user, login (Password / Key file / Agent / Anonymous), password (masked), key file, "remember secret", FTP mode, remote dir, local dir, notes. Fields that do not apply to the chosen login / protocol are hidden. Validation: name, host, port 1–65535, key path, login vs protocol. Editing keeps the site id. A typed password is sent as `SetSitePassword` **only** when "remember" is on; an empty password keeps the stored one. The key passphrase is not asked in the editor: it is prompted at connect time (T5).
+  - Input: new tree folder, rename node, new remote folder (`F7`), rename remote (`F2`, pre-filled); name must be non-empty and contain no `/`. Confirm: tree delete (`y`/`Enter`, `n`/`Esc`). Move picker: the root plus every folder except the node and its descendants, starting on the current parent.
+  - New sites / folders go into the folder under the cursor (or the site's folder).
+- `dialog_view.rs`: centered boxed overlay (`Clear` + bordered block), reversed cursor cell in text fields, bullets for masked text.
+- Remote `F8` delete still goes straight to `Command::Delete`: app-core already asks for confirmation (`confirm_delete`), shown by the T5 prompt dialogs.
+- 27 new tests (form 7, dialog 8, reducer 8, snapshots 5 → site editor, validation error with masked password, confirm, move picker, input).
