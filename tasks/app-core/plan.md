@@ -38,7 +38,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 ### Phase 1: Skeleton
 - [x] T1: Crate, `App::start`, actor loop, `watch` snapshots, coalescing, `shutdown`; startup with config errors + `ResetConfig` (M)
 - [x] T2: Log layer, ring buffer, `FILECARGO_LOG_FILE` (S)
-- [ ] T3: Tree commands, `ImportFileZilla` (→ `Message` with the report), `SetSitePassword` (S)
+- [x] T3: Tree commands, `ImportFileZilla` (→ `Message` with the report), `SetSitePassword` (S)
 ### Checkpoint A: AC1, AC2 green; snapshot API reviewed (UI authors depend on it)
 ### Phase 2: Browsing
 - [ ] T4: Prompt queue, `Prompter` impl, `Answer` routing, stale-id handling (M)
@@ -84,3 +84,9 @@ _Appended per task during implementation._
 - `logging.rs`: `LogBuffer` (ring of 5,000 `LogLine { time, level: config::LogLevel, target, message }`, a generation counter, and the **live level** as an atomic), `LogLayer` (a `tracing_subscriber::Layer`; formats `message` plus extra fields as `key=value`; optional file sink), `init_logging(&buffer)` for binaries (installs a registry and honors `FILECARGO_LOG_FILE`; returns `false` if a global subscriber already exists). `App::start` seeds the level from the settings and `UpdateSettings` changes it live; `AppState::log_generation` is refreshed at every publish.
 - The `log` crate is **not** bridged, by design (see the module doc): the FTP library's `PASS` traces are compiled out and nothing from dependencies below our own `tracing` events is shown.
 - 6 tests (target/level/fields, ring overflow, level filtering and live change through `UpdateSettings`, snapshot generation, file append).
+
+### T3 Tree and import commands (done) → Checkpoint A reached (AC1, AC2)
+- `tree.rs`: `Tree(op)` → `ConfigStore::apply` (a failure leaves the tree unchanged and queues **one** `Message` prompt with the config error), `ImportFileZilla` (folder `FileZilla import <UTC date>`, dated with a small civil-date function, unit-tested; result shown as a `Message` with "Imported N sites…", the skipped sites with reasons and the passwords not imported; `Warning` level when anything was skipped, `Error` for an unreadable file), `SetSitePassword` → keychain only (verified: not in any config file nor in the `Debug` output of the snapshot).
+- The `ConfigStore` is synchronous and takes a cross-process lock per write; the actor calls it directly (a few KB of TOML).
+- With the fixture: **6 imported, 1 skipped**, six sites in the tree. 5 tests.
+- Review note for the UI authors (Checkpoint A): the state/command vocabulary is in `state.rs` / `command.rs`; `Pane.entries` excludes `..`; prompts are a FIFO (the answer path arrives with T4, until then a `Message` simply stays).

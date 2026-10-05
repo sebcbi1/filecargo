@@ -323,6 +323,14 @@ impl Core {
     fn handle(&mut self, command: Command) {
         match command {
             Command::ResetConfig => self.reset_config(),
+            Command::Tree(op) => self.apply_tree_op(op),
+            Command::ImportFileZilla {
+                path,
+                import_passwords,
+            } => {
+                self.import_filezilla(&path, import_passwords);
+            }
+            Command::SetSitePassword { site, secret } => self.set_site_password(site, &secret),
             Command::UpdateSettings(settings) => self.update_settings(settings),
             Command::DismissNotice(id) => {
                 self.state.notices.retain(|n| n.id != id);

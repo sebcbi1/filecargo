@@ -5,6 +5,7 @@ mod command;
 mod logging;
 mod session;
 mod state;
+mod tree;
 
 pub use app::{App, AppHandle, StartOptions};
 pub use command::Command;
