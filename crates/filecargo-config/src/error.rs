@@ -64,3 +64,24 @@ pub enum ValidationError {
         rule: &'static str,
     },
 }
+
+/// Errors from reading a FileZilla site manager file.
+#[derive(Debug, thiserror::Error)]
+pub enum ImportError {
+    #[error("cannot read {path}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{path}:{line}: {msg}")]
+    Parse {
+        path: PathBuf,
+        line: usize,
+        msg: String,
+    },
+    #[error("{path}: {msg}")]
+    Format { path: PathBuf, msg: String },
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+}

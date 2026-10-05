@@ -72,7 +72,7 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 - [ ] AC6, AC7 pass; manual keychain smoke run on macOS
 
 ### Phase 4: Import
-- [ ] T8: FileZilla `sitemanager.xml` parser + fixture (S)
+- [x] T8: FileZilla `sitemanager.xml` parser + fixture (S)
 - [ ] T9: FileZilla import into the store (M)
 
 ### Checkpoint D: Module complete

@@ -2,6 +2,7 @@
 
 mod error;
 mod fsio;
+mod import;
 mod model;
 mod paths;
 mod secrets;
@@ -9,7 +10,7 @@ mod settings;
 mod store;
 mod tree;
 
-pub use error::{ConfigError, ValidationError};
+pub use error::{ConfigError, ImportError, ValidationError};
 pub use model::{Auth, Folder, FolderId, FtpMode, NodeId, Protocol, Site, SiteId};
 pub use paths::Paths;
 pub use secrets::{

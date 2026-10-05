@@ -7,8 +7,10 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64.workspace = true
 etcetera.workspace = true
 keyring-core.workspace = true
+quick-xml.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
