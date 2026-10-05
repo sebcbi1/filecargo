@@ -20,6 +20,7 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+secrecy.workspace = true
 
 [features]
 # Not used yet: real-server tests live in the lower crates.

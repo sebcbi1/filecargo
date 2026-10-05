@@ -43,7 +43,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 ### Phase 2: Browsing
 - [x] T4: Prompt queue, `Prompter` impl, `Answer` routing, stale-id handling (M)
 - [x] T5: Local pane: listing, navigation, sort (natural, dirs first), hidden filter, generation race (M)
-- [ ] T6: Connect flow via `SessionFactory`, `SessionState` steps, remote pane, auto-reconnect once (M)
+- [x] T6: Connect flow via `SessionFactory`, `SessionState` steps, remote pane, auto-reconnect once (M)
 - [ ] T7: Remote ops: mkdir, rename, delete with confirm (recursive), chmod (S)
 ### Checkpoint B: AC3, AC4, AC5, AC8, AC9 green
 ### Phase 3: Transfers and terminal
@@ -102,3 +102,10 @@ _Appended per task during implementation._
 - `sort.rs`: `natural_cmp` (case-insensitive, digit runs compare as numbers, leading zeros as a final tie-break so the order is total) and `sort_entries`: directories first, then the key; **descending reverses only the primary key, ties are always by name ascending** (so directories, all of size 0, stay in name order under a size sort). Unit tests are the table-driven AC9 (dirs first for every key × direction, natural order, unknown times first, dotfile hiding).
 - `AppState.local.entries` is an `Arc<[Entry]>` shared between snapshots (asserted by pointer equality after an unrelated change).
 - 7 integration tests + 4 unit tests. The remote pane reuses this machinery in T6.
+
+### T6 Connect and remote pane (done)
+- `Connect(site)` (`session.rs`): drops any current session (closed in the background; transfers keep their own connections), bumps `connect_epoch`, publishes `Connecting { step }` and spawns **one task** that calls `SessionFactory::connect` with a clone of the shared `ConnectContext` (one `SessionTrust` for the whole app, timeouts from the settings, `ActorPrompter` as prompter), then picks the start directory (`site.remote_dir` if it is a directory, else the server's home) and lists it. The task reports `ConnectStep::Listing` and finally `Connected`. Steps visible to the UI: `Connecting`, `Authenticating` (as soon as a credential prompt is shown), `Listing`. A result whose epoch is stale (a newer connect or a disconnect won) is dropped and its session closed. The local pane also switches to `site.local_dir`.
+- Failure: `Failed { error }`, a log line, and a `Message` prompt **only** for auth / key / host-key / certificate / TLS errors; refused or timed-out connections and a cancelled prompt just fail quietly.
+- **Lost connection** (a remote listing fails with a retryable `FsError`): the session becomes `Failed`, the pane stays, and the **next remote command** (`Navigate` / `Up` / `Refresh`) reconnects once and then replays that command (`after_connect`). If that reconnect fails nothing retries automatically: the next command only raises a "Not connected" notice.
+- Remote pane: same discipline as the local one (`remote_seq`, stale results dropped, old entries kept on error, `generation` bumps), paths normalised with `RemotePath::parse` (`..` above the root is an error shown in the pane), `~` = the server's home, `SetSort` re-sorts in hand.
+- Test harness: `TestFactory` serves a directory as a "server" (optional password asked through the prompter, `remember` honoured, `fail_next`, per-connection kill switch, connect/close counters). 11 tests: states, remote_dir and home fallback, second site closes the first, password prompt + authenticating step, cancel (no keychain write, no popup), remember, message-vs-quiet failures, reconnect once, no automatic second retry, navigation/up/errors/sort, no-session notice.

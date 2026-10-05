@@ -938,6 +938,7 @@ dependencies = [
  "filecargo-remote-fs",
  "filecargo-terminal",
  "filecargo-transfer",
+ "secrecy",
  "tempfile",
  "thiserror",
  "tokio",

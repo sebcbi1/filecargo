@@ -59,6 +59,7 @@ impl Prompter for ActorPrompter {
 impl Core {
     /// A prompt from a background task: queued behind the ones showing.
     pub(crate) fn request_prompt(&mut self, request: PromptRequest) {
+        self.note_prompt(&request.kind);
         let id = self.enqueue_prompt(request.kind);
         self.replies.insert(id, request.reply);
     }

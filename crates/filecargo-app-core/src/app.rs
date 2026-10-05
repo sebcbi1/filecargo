@@ -6,7 +6,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use filecargo_config::{ConfigStore, KeyringStore, Paths, SecretStore, Settings, UnavailableStore};
+use filecargo_config::{
+    ConfigStore, KeyringStore, Paths, SecretStore, Settings, SiteId, UnavailableStore,
+};
+use filecargo_remote_fs::{ConnectContext, ShellOpener};
 use filecargo_transfer::QueueSnapshot;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::Instant;
@@ -15,10 +18,10 @@ use crate::command::Command;
 use crate::logging::LogBuffer;
 use crate::pane::LocalListing;
 use crate::prompt::{ActorPrompter, PromptRequest};
-use crate::session::{SessionFactory, default_factory};
+use crate::session::{Connected, Live, RemoteListing, SessionFactory, default_factory};
 use crate::state::{
-    AppState, Level, Notice, NoticeId, Pane, PaneId, Prompt, PromptAnswer, PromptId, PromptKind,
-    SessionState, StartError, TerminalState,
+    AppState, ConnectStep, Level, Notice, NoticeId, Pane, PaneId, Prompt, PromptAnswer, PromptId,
+    PromptKind, SessionState, StartError, TerminalState,
 };
 
 /// Published snapshots are coalesced to at most this many per second.
@@ -101,6 +104,14 @@ impl App {
         log.set_level(settings_level);
         let (commands_tx, commands_rx) = mpsc::unbounded_channel();
         let (publisher, snapshots) = watch::channel(Arc::new(state.clone()));
+        let mut ctx = ConnectContext::new(
+            paths.clone(),
+            secrets.clone(),
+            Arc::new(ActorPrompter {
+                messages: commands_tx.clone(),
+            }),
+        );
+        ctx.timeouts = state.settings.connection.clone();
         let mut core = Core {
             state,
             paths,
@@ -115,6 +126,13 @@ impl App {
             prompts: VecDeque::new(),
             replies: HashMap::new(),
             local_seq: 0,
+            ctx,
+            live: None,
+            shell: None,
+            connect_epoch: 0,
+            after_connect: None,
+            lost_site: None,
+            remote_seq: 0,
             next_prompt: 0,
             next_notice: 0,
         };
@@ -165,6 +183,13 @@ pub(crate) enum Msg {
     Prompt(PromptRequest),
     /// A local directory listing finished.
     LocalListed(LocalListing),
+    RemoteListed(RemoteListing),
+    /// The connect task found out how far it got.
+    ConnectStep {
+        epoch: u64,
+        step: ConnectStep,
+    },
+    Connected(Connected),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -236,12 +261,23 @@ pub(crate) struct Core {
     pub(crate) paths: Paths,
     pub(crate) store: Option<ConfigStore>,
     pub(crate) secrets: Arc<dyn SecretStore>,
-    // used by the connect flow (T6)
-    #[allow(dead_code)]
     pub(crate) factory: Arc<dyn SessionFactory>,
+    /// Shared by every connection of the app (browsing and transfers): the in-memory trust
+    /// means nobody is asked twice for the same answer.
+    pub(crate) ctx: ConnectContext,
+    /// The connected session, if any.
+    pub(crate) live: Option<Live>,
+    pub(crate) shell: Option<ShellOpener>,
+    /// Bumps on every connect and disconnect; results of older ones are discarded.
+    pub(crate) connect_epoch: u64,
+    /// Runs once the connection in progress succeeds (an automatic reconnect replays the
+    /// command that triggered it).
+    pub(crate) after_connect: Option<Command>,
+    /// The site whose connection was lost while browsing: the next remote command reconnects.
+    pub(crate) lost_site: Option<SiteId>,
+    /// Id of the newest remote listing request.
+    pub(crate) remote_seq: u64,
     pub(crate) log: LogBuffer,
-    // used by background tasks (T4+)
-    #[allow(dead_code)]
     /// For tasks that report back to the actor.
     pub(crate) messages: mpsc::UnboundedSender<Msg>,
     publisher: watch::Sender<Arc<AppState>>,
@@ -269,9 +305,12 @@ impl Core {
             };
             tokio::select! {
                 message = messages.recv() => match message {
-                    Some(Msg::Command(command)) => self.handle(command),
+                    Some(Msg::Command(command)) => self.handle_command(command),
                     Some(Msg::Prompt(request)) => self.request_prompt(request),
                     Some(Msg::LocalListed(listing)) => self.on_local_listed(listing),
+                    Some(Msg::RemoteListed(listing)) => self.on_remote_listed(listing),
+                    Some(Msg::Connected(connected)) => self.on_connected(connected),
+                    Some(Msg::ConnectStep { epoch, step }) => self.on_connect_step(epoch, step),
                     Some(Msg::Shutdown(ack)) => {
                         self.shutdown().await;
                         self.publish_now();
@@ -344,7 +383,7 @@ impl Core {
         });
     }
 
-    fn handle(&mut self, command: Command) {
+    pub(crate) fn handle_command(&mut self, command: Command) {
         match command {
             Command::ResetConfig => self.reset_config(),
             Command::Tree(op) => self.apply_tree_op(op),
@@ -361,6 +400,27 @@ impl Core {
                 pane: PaneId::Local,
                 path,
             } => self.navigate_local(&path),
+            Command::Connect(site) => self.connect(site, None),
+            Command::Disconnect => self.disconnect(),
+            Command::SetSort {
+                pane: PaneId::Remote,
+                sort,
+            } => self.sort_remote(sort),
+            command @ (Command::Navigate {
+                pane: PaneId::Remote,
+                ..
+            }
+            | Command::Up(PaneId::Remote)
+            | Command::Refresh(PaneId::Remote)) => {
+                if let Some(command) = self.ready_for_remote(command) {
+                    match command {
+                        Command::Navigate { path, .. } => self.navigate_remote(&path),
+                        Command::Up(_) => self.up_remote(),
+                        Command::Refresh(_) => self.refresh_remote(),
+                        _ => {}
+                    }
+                }
+            }
             Command::Up(PaneId::Local) => self.up_local(),
             Command::Refresh(PaneId::Local) => self.refresh_local(),
             Command::SetSort {
