@@ -36,7 +36,7 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 - [x] T5: Prompt dialogs for every `PromptKind` + chmod, go-to-path, import dialogs (M)
 ### Checkpoint B: connect to a site with password + host-key prompt, browse, and edit sites, all in the binary
 ### Phase 3: Transfers, log, terminal, polish
-- [ ] T6: Bottom panel: Queue / Completed / Failed / Log tabs, progress bars, queue bindings, transfer bindings in panes (M)
+- [x] T6: Bottom panel: Queue / Completed / Failed / Log tabs, progress bars, queue bindings, transfer bindings in panes (M)
 - [ ] T7: Terminal tab (`tui-term`), key mapping to `terminal::Key`, focus escape, scrollback keys (S)
 - [ ] T8: Help overlay from keymap, status line, mouse (wheel + click focus), `NO_COLOR`, complete snapshot suite, `SMOKE.md` + manual smoke on 3 OSes (M)
 ### Checkpoint C: all 6 AC green, CI green, smoke checklist done, human review
@@ -99,3 +99,10 @@ _Appended per task during implementation._
 - **Utility dialogs** (`dialog_util.rs`, plus `InputPurpose::GoTo`): `g` go to path (either pane, pre-filled with the current path, slashes allowed), `c` chmod (remote only; octal text and the nine rwx boxes stay in step both ways, special bits typed in octal survive a box toggle, `Enter` → `Command::Chmod`), `i` import (path pre-filled with `~/.config/filezilla/sitemanager.xml`, "Import passwords" box → `Command::ImportFileZilla`).
 - `Field.id` / `label` became `String` (prompt texts are dynamic).
 - 18 new tests (prompt_ui 6, dialog_util 5, reducer 5, snapshots: one per prompt kind ×8 plus chmod, go-to, import).
+
+### T6 Bottom panel + transfers (done)
+- `UiState.bottom: BottomUi { tab, queue / completed / failed: ListUi, log_scroll, log_follow }` and `UiState.log: LogBuffer` (the loop sets it from `AppHandle::log()`; `LogBuffer` gained a `Debug` impl in app-core). Tabs: Queue / Completed / Failed / Log / Terminal; `Alt-1..5` select a tab and focus the panel, `Left`/`Right` (`h`/`l`) cycle the three list tabs and the log (the terminal tab will pass every key to the shell, so `Alt-n` leaves it).
+- Keymap contexts `Queue` (shared by the three list tabs) and `Log` now have bindings: cursor keys, `p` pause/resume (`QueueSetProcessing(!processing)`), `Del`/`d` remove (cancels a running item), `r` retry (failed tab), `R` retry all, `c` clear completed; log: `Up/Down/PgUp/PgDn/Home` scroll, `End`/`f` follow. A test checks that no two bindings of one context share a key.
+- View (`bottom_view.rs`): tab titles with counts (Failed in red when non-empty), queue table with direction arrow, name (`dir/` for directories), `██░░ 44%` bar, `done/total`, speed, ETA, a totals footer with `PAUSED (p to resume)`, conflict items shown as `waiting for you`; completed list (result text, size, finished time); failed list (reason, retry/final); log lines with a UTC clock and coloured level; empty-state messages.
+- `F5` / `t` / `Enter`-on-file transfers were already in T2.
+- 17 new tests (reducer 9 incl. the binding-conflict check, formats 1, snapshots: queue, completed, failed, log + paused/empty assertions).

@@ -65,6 +65,15 @@ fn from_tracing(level: &TracingLevel) -> LogLevel {
     }
 }
 
+impl std::fmt::Debug for LogBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LogBuffer")
+            .field("lines", &self.len())
+            .field("generation", &self.generation())
+            .finish()
+    }
+}
+
 impl Default for LogBuffer {
     fn default() -> Self {
         Self {

@@ -13,7 +13,7 @@ use crate::layout;
 use crate::pane::{PaneView, pane_view};
 use crate::prompt_ui::{PromptSlot, PromptUi};
 use crate::tree::{self, RowKind};
-use crate::ui_state::{Focus, PaneUi, UiState};
+use crate::ui_state::{BottomTab, Focus, ListUi, PaneUi, UiState};
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -57,6 +57,7 @@ fn scroll_to_cursor(pane: &mut PaneUi, rows: usize) {
 pub fn sync(ui: &mut UiState, app: &AppState) {
     sync_tree(ui, app);
     sync_prompt(ui, app);
+    sync_bottom(ui, app);
     for focus in [Focus::Local, Focus::Remote] {
         let rows = viewport(ui, focus);
         let Some(view) = pane_view(app, focus) else {
@@ -170,7 +171,11 @@ fn context_for(ui: &UiState) -> Context {
     match ui.focus {
         Focus::Tree => Context::Tree,
         Focus::Local | Focus::Remote => Context::Files,
-        Focus::Bottom => Context::Queue,
+        Focus::Bottom => match ui.bottom.tab {
+            BottomTab::Log => Context::Log,
+            BottomTab::Terminal => Context::Terminal,
+            _ => Context::Queue,
+        },
     }
 }
 
@@ -580,6 +585,155 @@ fn prompt_key(ui: &mut UiState, app: &AppState, key: KeyEvent) -> Vec<Command> {
     }
 }
 
+/// Rows of a list tab: the panel's height minus the border, the header and the footer line.
+fn bottom_rows(ui: &UiState) -> usize {
+    let area = layout::areas(
+        Rect::new(0, 0, ui.size.0, ui.size.1),
+        ui.tree_visible(),
+        ui.maximize_bottom,
+    )
+    .bottom;
+    usize::from(area.height.saturating_sub(4)).max(1)
+}
+
+/// Lines of the log tab: the panel's height minus the border.
+pub(crate) fn log_rows(ui: &UiState) -> usize {
+    let area = layout::areas(
+        Rect::new(0, 0, ui.size.0, ui.size.1),
+        ui.tree_visible(),
+        ui.maximize_bottom,
+    )
+    .bottom;
+    usize::from(area.height.saturating_sub(2)).max(1)
+}
+
+fn list_len(app: &AppState, tab: BottomTab) -> usize {
+    match tab {
+        BottomTab::Queue => app.queue.pending.len(),
+        BottomTab::Completed => app.queue.completed.len(),
+        BottomTab::Failed => app.queue.failed.len(),
+        BottomTab::Log | BottomTab::Terminal => 0,
+    }
+}
+
+fn keep_in_view(list: &mut ListUi, len: usize, rows: usize) {
+    list.cursor = list.cursor.min(len.saturating_sub(1));
+    if list.cursor < list.offset {
+        list.offset = list.cursor;
+    } else if list.cursor >= list.offset + rows {
+        list.offset = list.cursor + 1 - rows;
+    }
+    list.offset = list.offset.min(len.saturating_sub(rows));
+}
+
+fn sync_bottom(ui: &mut UiState, app: &AppState) {
+    let rows = bottom_rows(ui);
+    for tab in [BottomTab::Queue, BottomTab::Completed, BottomTab::Failed] {
+        let len = list_len(app, tab);
+        let list = match tab {
+            BottomTab::Queue => &mut ui.bottom.queue,
+            BottomTab::Completed => &mut ui.bottom.completed,
+            _ => &mut ui.bottom.failed,
+        };
+        keep_in_view(list, len, rows);
+    }
+    if ui.bottom.log_follow {
+        ui.bottom.log_scroll = 0;
+    }
+}
+
+fn select_tab(ui: &mut UiState, tab: BottomTab) {
+    ui.bottom.tab = tab;
+    ui.focus = Focus::Bottom;
+}
+
+/// The id of the item under the cursor of the visible list tab.
+fn item_under_cursor(ui: &UiState, app: &AppState) -> Option<TransferId> {
+    let (list, items) = match ui.bottom.tab {
+        BottomTab::Queue => (ui.bottom.queue, &app.queue.pending),
+        BottomTab::Completed => (ui.bottom.completed, &app.queue.completed),
+        BottomTab::Failed => (ui.bottom.failed, &app.queue.failed),
+        BottomTab::Log | BottomTab::Terminal => return None,
+    };
+    items.get(list.cursor).map(|view| view.item.id)
+}
+
+fn bottom_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command> {
+    let tab = ui.bottom.tab;
+    match action {
+        Action::TabNext | Action::TabPrev => {
+            let count = BottomTab::ALL.len();
+            let at = tab.index();
+            let next = if action == Action::TabNext {
+                (at + 1) % count
+            } else {
+                (at + count - 1) % count
+            };
+            ui.bottom.tab = BottomTab::ALL[next];
+            Vec::new()
+        }
+        Action::QueuePause => vec![Command::QueueSetProcessing(!app.queue.processing)],
+        Action::QueueClear => vec![Command::QueueClearCompleted],
+        Action::QueueRetryAll => vec![Command::QueueRetryFailed],
+        Action::QueueRemove => item_under_cursor(ui, app)
+            .map(Command::QueueRemove)
+            .into_iter()
+            .collect(),
+        Action::QueueRetry if tab == BottomTab::Failed => item_under_cursor(ui, app)
+            .map(Command::QueueRetry)
+            .into_iter()
+            .collect(),
+        Action::LogFollow => {
+            ui.bottom.log_follow = true;
+            ui.bottom.log_scroll = 0;
+            Vec::new()
+        }
+        Action::Up
+        | Action::Down
+        | Action::PageUp
+        | Action::PageDown
+        | Action::Home
+        | Action::End => {
+            if tab == BottomTab::Log {
+                scroll_log(ui, action);
+            } else {
+                let (len, rows) = (list_len(app, tab), bottom_rows(ui));
+                if let Some(list) = ui.bottom.list_mut() {
+                    list.cursor = match action {
+                        Action::Up => list.cursor.saturating_sub(1),
+                        Action::Down => list.cursor + 1,
+                        Action::PageUp => list.cursor.saturating_sub(rows.saturating_sub(1).max(1)),
+                        Action::PageDown => list.cursor + rows.saturating_sub(1).max(1),
+                        Action::Home => 0,
+                        _ => len.saturating_sub(1),
+                    };
+                    keep_in_view(list, len, rows);
+                }
+            }
+            Vec::new()
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn scroll_log(ui: &mut UiState, action: Action) {
+    let total = ui.log.len();
+    let rows = log_rows(ui);
+    let max = total.saturating_sub(rows);
+    let page = rows.saturating_sub(1).max(1);
+    let scroll = ui.bottom.log_scroll;
+    let scroll = match action {
+        Action::Up => scroll + 1,
+        Action::Down => scroll.saturating_sub(1),
+        Action::PageUp => scroll + page,
+        Action::PageDown => scroll.saturating_sub(page),
+        Action::Home => max,
+        _ => scroll,
+    };
+    ui.bottom.log_scroll = scroll.min(max);
+    ui.bottom.log_follow = ui.bottom.log_scroll == 0;
+}
+
 pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> {
     match event {
         Event::Resize(width, height) => {
@@ -614,6 +768,12 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
                     shift_focus(ui, app, false);
                     Vec::new()
                 }
+                Action::BottomTab(index) => {
+                    if let Some(tab) = BottomTab::from_index(index) {
+                        select_tab(ui, tab);
+                    }
+                    Vec::new()
+                }
                 Action::ToggleTree => {
                     ui.tree_override = Some(!ui.tree_visible());
                     if !ui.tree_visible() && ui.focus == Focus::Tree {
@@ -639,7 +799,7 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
                 other => match ui.focus {
                     Focus::Local | Focus::Remote => files_action(ui, app, other),
                     Focus::Tree => tree_action(ui, app, other),
-                    Focus::Bottom => Vec::new(),
+                    Focus::Bottom => bottom_action(ui, app, other),
                 },
             }
         }
@@ -1560,5 +1720,210 @@ mod prompt_tests {
         ui.focus = Focus::Tree;
         on_event(&mut ui, &app, ch('i'));
         assert!(matches!(ui.dialog, Some(Dialog::Import(_))));
+    }
+}
+
+#[cfg(test)]
+mod bottom_tests {
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+    use super::*;
+    use crate::test_support::{app, busy_queue, synced};
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ch(c: char) -> Event {
+        key(KeyCode::Char(c))
+    }
+
+    fn alt(c: char) -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT))
+    }
+
+    fn busy() -> AppState {
+        let mut app = app();
+        app.queue = std::sync::Arc::new(busy_queue());
+        app
+    }
+
+    fn debug(commands: &[Command]) -> Vec<String> {
+        commands.iter().map(|c| format!("{c:?}")).collect()
+    }
+
+    #[test]
+    fn alt_digits_pick_the_tab_and_focus_the_panel() {
+        let app = busy();
+        let mut ui = synced(100, 30, &app);
+        for (digit, tab) in [
+            ('2', BottomTab::Completed),
+            ('3', BottomTab::Failed),
+            ('4', BottomTab::Log),
+            ('1', BottomTab::Queue),
+        ] {
+            on_event(&mut ui, &app, alt(digit));
+            assert_eq!((ui.bottom.tab, ui.focus), (tab, Focus::Bottom));
+            ui.focus = Focus::Local;
+        }
+    }
+
+    #[test]
+    fn left_and_right_cycle_the_tabs_and_wrap() {
+        let app = busy();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Bottom;
+        on_event(&mut ui, &app, key(KeyCode::Left));
+        assert_eq!(ui.bottom.tab, BottomTab::Terminal, "wraps backwards");
+        // the terminal tab sends every key to the shell; Alt-digits leave it
+        on_event(&mut ui, &app, alt('1'));
+        assert_eq!(ui.bottom.tab, BottomTab::Queue);
+        on_event(&mut ui, &app, ch('l'));
+        assert_eq!(ui.bottom.tab, BottomTab::Completed);
+    }
+
+    #[test]
+    fn the_cursor_moves_within_the_list_and_remove_targets_the_row_under_it() {
+        let app = busy();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Bottom;
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        assert_eq!(ui.bottom.queue.cursor, 2, "stops on the last of 3 rows");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Delete));
+        assert_eq!(debug(&commands), ["QueueRemove(TransferId(3))"]);
+        on_event(&mut ui, &app, key(KeyCode::Home));
+        let commands = on_event(&mut ui, &app, ch('d'));
+        assert_eq!(debug(&commands), ["QueueRemove(TransferId(1))"]);
+    }
+
+    #[test]
+    fn pause_toggles_with_the_queue_state_and_clear_and_retry_map_to_commands() {
+        let mut app = busy();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Bottom;
+        assert_eq!(
+            debug(&on_event(&mut ui, &app, ch('p'))),
+            ["QueueSetProcessing(false)"]
+        );
+        let mut paused = (*app.queue).clone();
+        paused.processing = false;
+        app.queue = std::sync::Arc::new(paused);
+        assert_eq!(
+            debug(&on_event(&mut ui, &app, ch('p'))),
+            ["QueueSetProcessing(true)"]
+        );
+        assert_eq!(
+            debug(&on_event(&mut ui, &app, ch('c'))),
+            ["QueueClearCompleted"]
+        );
+        assert_eq!(
+            debug(&on_event(&mut ui, &app, ch('R'))),
+            ["QueueRetryFailed"]
+        );
+        assert!(
+            on_event(&mut ui, &app, ch('r')).is_empty(),
+            "retry is for the failed tab"
+        );
+        on_event(&mut ui, &app, alt('3'));
+        assert_eq!(
+            debug(&on_event(&mut ui, &app, ch('r'))),
+            ["QueueRetry(TransferId(6))"]
+        );
+    }
+
+    #[test]
+    fn list_keys_do_nothing_on_an_empty_list() {
+        let app = app();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Bottom;
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        on_event(&mut ui, &app, key(KeyCode::End));
+        assert_eq!(ui.bottom.queue, ListUi::default());
+        assert!(on_event(&mut ui, &app, key(KeyCode::Delete)).is_empty());
+    }
+
+    #[test]
+    fn cursors_are_clamped_when_the_list_shrinks() {
+        let mut app = busy();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Bottom;
+        on_event(&mut ui, &app, key(KeyCode::End));
+        assert_eq!(ui.bottom.queue.cursor, 2);
+        let mut smaller = (*app.queue).clone();
+        smaller.pending.truncate(1);
+        app.queue = std::sync::Arc::new(smaller);
+        sync(&mut ui, &app);
+        assert_eq!(ui.bottom.queue.cursor, 0);
+    }
+
+    fn log_line(n: usize) -> LogLine {
+        LogLine {
+            time: std::time::UNIX_EPOCH,
+            level: LogLevel::Info,
+            target: "filecargo::test".into(),
+            message: format!("line {n}"),
+        }
+    }
+
+    #[test]
+    fn the_log_scrolls_up_stops_at_the_ends_and_f_follows_again() {
+        let app = app();
+        let mut ui = synced(100, 30, &app);
+        for n in 0..100 {
+            ui.log.push(log_line(n));
+        }
+        on_event(&mut ui, &app, alt('4'));
+        assert!(ui.bottom.log_follow);
+        on_event(&mut ui, &app, key(KeyCode::Up));
+        assert_eq!((ui.bottom.log_scroll, ui.bottom.log_follow), (1, false));
+        on_event(&mut ui, &app, key(KeyCode::PageUp));
+        assert!(ui.bottom.log_scroll > 1);
+        on_event(&mut ui, &app, key(KeyCode::Home));
+        let rows = log_rows(&ui);
+        assert_eq!(
+            ui.bottom.log_scroll,
+            100 - rows,
+            "the oldest line is at the top"
+        );
+        on_event(&mut ui, &app, key(KeyCode::Up));
+        assert_eq!(
+            ui.bottom.log_scroll,
+            100 - rows,
+            "no scrolling past the oldest line"
+        );
+        on_event(&mut ui, &app, ch('f'));
+        assert_eq!((ui.bottom.log_scroll, ui.bottom.log_follow), (0, true));
+        on_event(&mut ui, &app, key(KeyCode::Up));
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        assert!(
+            ui.bottom.log_follow,
+            "scrolling back to the bottom follows again"
+        );
+    }
+
+    #[test]
+    fn no_two_bindings_of_one_context_share_a_key() {
+        use crate::keymap::BINDINGS;
+        for (i, a) in BINDINGS.iter().enumerate() {
+            for b in &BINDINGS[i + 1..] {
+                if a.context != b.context {
+                    continue;
+                }
+                for ka in a.keys {
+                    for kb in b.keys {
+                        assert!(
+                            !(ka.code == kb.code && ka.mods == kb.mods),
+                            "{:?} is bound twice in {:?}: {} and {}",
+                            ka.code,
+                            a.context,
+                            a.help,
+                            b.help
+                        );
+                    }
+                }
+            }
+        }
     }
 }

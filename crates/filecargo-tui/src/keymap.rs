@@ -59,6 +59,15 @@ pub enum Action {
     MoveNode,
     DeleteNode,
     ImportFileZilla,
+    // bottom panel
+    TabNext,
+    TabPrev,
+    QueuePause,
+    QueueRemove,
+    QueueRetry,
+    QueueRetryAll,
+    QueueClear,
+    LogFollow,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -169,6 +178,29 @@ pub static BINDINGS: &[Binding] = &[
     Binding { context: C::Tree, keys: &[ch('m')], label: "m", action: A::MoveNode, help: "move to a folder" },
     Binding { context: C::Tree, keys: &[plain(KeyCode::Delete)], label: "Del", action: A::DeleteNode, help: "delete the site or folder" },
     Binding { context: C::Tree, keys: &[ch('i')], label: "i", action: A::ImportFileZilla, help: "import a FileZilla sitemanager.xml" },
+    // ---- queue, completed and failed lists ----------------------------------------------------
+    Binding { context: C::Queue, keys: &[plain(KeyCode::Up), ch('k')], label: "Up Down", action: A::Up, help: "move the cursor" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::Down), ch('j')], label: "", action: A::Down, help: "" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::PageUp)], label: "PgUp PgDn", action: A::PageUp, help: "page up / down" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::PageDown)], label: "", action: A::PageDown, help: "" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::Home)], label: "Home End", action: A::Home, help: "first / last row" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::End)], label: "", action: A::End, help: "" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::Right), ch('l')], label: "Right Left", action: A::TabNext, help: "next / previous tab" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::Left), ch('h')], label: "", action: A::TabPrev, help: "" },
+    Binding { context: C::Queue, keys: &[ch('p')], label: "p", action: A::QueuePause, help: "pause / resume the queue" },
+    Binding { context: C::Queue, keys: &[plain(KeyCode::Delete), ch('d')], label: "Del d", action: A::QueueRemove, help: "remove the item (cancels it when running)" },
+    Binding { context: C::Queue, keys: &[ch('r')], label: "r", action: A::QueueRetry, help: "retry the failed item" },
+    Binding { context: C::Queue, keys: &[ch('R')], label: "R", action: A::QueueRetryAll, help: "retry every failed item" },
+    Binding { context: C::Queue, keys: &[ch('c')], label: "c", action: A::QueueClear, help: "clear the completed list" },
+    // ---- log ----------------------------------------------------------------------------------
+    Binding { context: C::Log, keys: &[plain(KeyCode::Up), ch('k')], label: "Up Down", action: A::Up, help: "scroll the log" },
+    Binding { context: C::Log, keys: &[plain(KeyCode::Down), ch('j')], label: "", action: A::Down, help: "" },
+    Binding { context: C::Log, keys: &[plain(KeyCode::PageUp)], label: "PgUp PgDn", action: A::PageUp, help: "scroll a page" },
+    Binding { context: C::Log, keys: &[plain(KeyCode::PageDown)], label: "", action: A::PageDown, help: "" },
+    Binding { context: C::Log, keys: &[plain(KeyCode::Home)], label: "Home", action: A::Home, help: "oldest line" },
+    Binding { context: C::Log, keys: &[plain(KeyCode::End), ch('f')], label: "End f", action: A::LogFollow, help: "follow the newest line" },
+    Binding { context: C::Log, keys: &[plain(KeyCode::Right), ch('l')], label: "Right Left", action: A::TabNext, help: "next / previous tab" },
+    Binding { context: C::Log, keys: &[plain(KeyCode::Left), ch('h')], label: "", action: A::TabPrev, help: "" },
 ];
 
 fn normalize(key: KeyEvent) -> (KeyCode, KeyModifiers) {

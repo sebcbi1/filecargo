@@ -75,6 +75,33 @@ pub(crate) fn format_size(bytes: u64) -> String {
     }
 }
 
+/// `14:02:09` (UTC).
+pub(crate) fn format_clock(time: SystemTime) -> String {
+    let secs = time.duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let rest = secs % 86_400;
+    format!(
+        "{:02}:{:02}:{:02}",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60
+    )
+}
+
+/// `0:12`, `3:05`, `1:02:03`.
+pub(crate) fn format_duration(duration: Duration) -> String {
+    let secs = duration.as_secs();
+    if secs >= 3600 {
+        format!("{}:{:02}:{:02}", secs / 3600, secs % 3600 / 60, secs % 60)
+    } else {
+        format!("{}:{:02}", secs / 60, secs % 60)
+    }
+}
+
+/// `1.2M/s`.
+pub(crate) fn format_rate(bytes_per_second: f64) -> String {
+    format!("{}/s", format_size(bytes_per_second.max(0.0) as u64))
+}
+
 /// (year, month, day, hour, minute) in UTC.
 fn civil(time: SystemTime) -> (i64, i64, i64, i64, i64) {
     let secs = time
@@ -168,5 +195,23 @@ mod tests {
         assert_eq!(abbreviate("/home/mellow/x", Some(home)), "/home/mellow/x");
         assert_eq!(abbreviate("/var/www", Some(home)), "/var/www");
         assert_eq!(abbreviate("/home/me", None), "/home/me");
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    #[test]
+    fn clock_duration_and_rate() {
+        assert_eq!(
+            format_clock(UNIX_EPOCH + Duration::from_secs(14 * 3600 + 2 * 60 + 9)),
+            "14:02:09"
+        );
+        assert_eq!(format_duration(Duration::from_secs(12)), "0:12");
+        assert_eq!(format_duration(Duration::from_secs(185)), "3:05");
+        assert_eq!(format_duration(Duration::from_secs(3723)), "1:02:03");
+        assert_eq!(format_rate(1_258_291.0), "1.2M/s");
+        assert_eq!(format_rate(-5.0), "0/s");
     }
 }

@@ -1,6 +1,7 @@
 //! The terminal front-end: a pure reducer, a pure view and a thin loop.
 
 pub mod app_loop;
+pub mod bottom_view;
 pub mod dialog;
 pub mod dialog_util;
 pub mod dialog_view;

@@ -61,13 +61,7 @@ pub fn render(frame: &mut Frame, ui: &UiState, app: &AppState) {
         render_pane(frame, areas.local, Focus::Local, ui, app, &look);
         render_pane(frame, areas.remote, Focus::Remote, ui, app, &look);
     }
-    placeholder(
-        frame,
-        areas.bottom,
-        " Queue ",
-        ui.focus == Focus::Bottom,
-        &look,
-    );
+    crate::bottom_view::render(frame, areas.bottom, ui, app, &look);
     frame.render_widget(Paragraph::new(" q quit  Tab focus"), areas.status);
     if let Some(dialog) = &ui.dialog {
         crate::dialog_view::render(frame, area, dialog, &look);
@@ -78,14 +72,6 @@ pub fn render(frame: &mut Frame, ui: &UiState, app: &AppState) {
     {
         crate::prompt_view::render(frame, area, &prompt.kind, &slot.ui, ui, &look);
     }
-}
-
-fn placeholder(frame: &mut Frame, area: Rect, title: &str, focused: bool, look: &Look) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(look.border(focused));
-    frame.render_widget(block, area);
 }
 
 fn render_pane(

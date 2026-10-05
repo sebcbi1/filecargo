@@ -137,3 +137,109 @@ pub fn sample_tree() -> ServerTree {
 pub fn site_id(tree: &ServerTree, name: &str) -> SiteId {
     tree.sites().iter().find(|s| s.name == name).unwrap().id
 }
+
+/// A queue item uploading (`up`) or downloading `name`, in the given state.
+pub fn queue_item(
+    id: u64,
+    up: bool,
+    name: &str,
+    size: Option<u64>,
+    transferred: u64,
+    state: ItemState,
+) -> QueueItemView {
+    QueueItemView {
+        item: QueueItem {
+            id: TransferId(id),
+            site: SiteId::new(),
+            direction: if up {
+                Direction::Upload
+            } else {
+                Direction::Download
+            },
+            local: PathBuf::from(format!("/home/me/projects/{name}")),
+            remote: RemotePath::parse(&format!("/var/www/{name}")).unwrap(),
+            is_dir: false,
+            size,
+            transferred,
+            state,
+            attempts: 1,
+            parent: None,
+            conflict: None,
+        },
+        rate: None,
+        eta: None,
+    }
+}
+
+fn at(seconds_ago: u64) -> std::time::SystemTime {
+    UNIX_EPOCH + Duration::from_secs(NOW - seconds_ago)
+}
+
+/// One active upload, one waiting on a conflict, one queued directory; two completed, one failed.
+pub fn busy_queue() -> QueueSnapshot {
+    let mut active = queue_item(
+        1,
+        true,
+        "backup.tar",
+        Some(25_000_000),
+        11_000_000,
+        ItemState::Active { started: at(60) },
+    );
+    active.rate = Some(1_258_291.0);
+    active.eta = Some(Duration::from_secs(12));
+    let waiting = queue_item(
+        2,
+        true,
+        "index.php",
+        Some(4400),
+        0,
+        ItemState::AwaitingDecision {
+            conflict: ConflictInfo {
+                source: entry("index.php", false, 4400, 1),
+                target: entry("index.php", false, 3900, 40),
+            },
+        },
+    );
+    let mut folder = queue_item(3, false, "photos", None, 0, ItemState::Pending);
+    folder.item.is_dir = true;
+    let done = |id, name: &str, outcome| {
+        queue_item(
+            id,
+            false,
+            name,
+            Some(2048),
+            2048,
+            ItemState::Completed {
+                outcome,
+                finished: at(300),
+            },
+        )
+    };
+    let failed = queue_item(
+        6,
+        true,
+        "big.iso",
+        Some(1_600_000_000),
+        1000,
+        ItemState::Failed {
+            reason: "connection reset by peer".to_owned(),
+            retryable: true,
+            finished: at(30),
+        },
+    );
+    QueueSnapshot {
+        pending: vec![active, waiting, folder],
+        completed: vec![
+            done(4, "style.css", Outcome::Transferred),
+            done(5, "notes.txt", Outcome::Skipped),
+        ],
+        failed: vec![failed],
+        processing: true,
+        totals: Totals {
+            bytes_done: 11_000_000,
+            bytes_total: 26_000_000,
+            rate: Some(1_258_291.0),
+            eta: Some(Duration::from_secs(12)),
+        },
+    }
+}

@@ -39,6 +39,7 @@ pub async fn run(
     let mut tick = tokio::time::interval(TICK);
     let size = terminal.size()?;
     let mut ui = UiState::new(size.width, size.height);
+    ui.log = app.log();
     let mut dirty = true;
 
     loop {

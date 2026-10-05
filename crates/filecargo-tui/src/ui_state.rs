@@ -1,6 +1,8 @@
 //! Everything the TUI remembers that `AppState` does not: focus, cursors, selections.
 
 use std::collections::BTreeSet;
+
+use filecargo_app_core::prelude::LogBuffer;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -30,6 +32,86 @@ pub struct PaneUi {
     pub seen: Option<(String, u64)>,
 }
 
+/// The tabs of the bottom panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BottomTab {
+    Queue,
+    Completed,
+    Failed,
+    Log,
+    Terminal,
+}
+
+impl BottomTab {
+    pub const ALL: [Self; 5] = [
+        Self::Queue,
+        Self::Completed,
+        Self::Failed,
+        Self::Log,
+        Self::Terminal,
+    ];
+
+    pub fn from_index(index: u8) -> Option<Self> {
+        Self::ALL.get(usize::from(index)).copied()
+    }
+
+    pub fn index(self) -> usize {
+        Self::ALL.iter().position(|t| *t == self).unwrap_or(0)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Queue => "Queue",
+            Self::Completed => "Completed",
+            Self::Failed => "Failed",
+            Self::Log => "Log",
+            Self::Terminal => "Terminal",
+        }
+    }
+}
+
+/// Cursor of one list tab.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ListUi {
+    pub cursor: usize,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BottomUi {
+    pub tab: BottomTab,
+    pub queue: ListUi,
+    pub completed: ListUi,
+    pub failed: ListUi,
+    /// Lines scrolled up from the newest; 0 while following.
+    pub log_scroll: usize,
+    pub log_follow: bool,
+}
+
+impl Default for BottomUi {
+    fn default() -> Self {
+        Self {
+            tab: BottomTab::Queue,
+            queue: ListUi::default(),
+            completed: ListUi::default(),
+            failed: ListUi::default(),
+            log_scroll: 0,
+            log_follow: true,
+        }
+    }
+}
+
+impl BottomUi {
+    pub fn list_mut(&mut self) -> Option<&mut ListUi> {
+        match self.tab {
+            BottomTab::Queue => Some(&mut self.queue),
+            BottomTab::Completed => Some(&mut self.completed),
+            BottomTab::Failed => Some(&mut self.failed),
+            BottomTab::Log | BottomTab::Terminal => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UiState {
     pub focus: Focus,
@@ -44,6 +126,9 @@ pub struct UiState {
     pub dialog: Option<Dialog>,
     /// The app's prompt on show (it sits above any dialog).
     pub prompt: Option<PromptSlot>,
+    pub bottom: BottomUi,
+    /// The app's log, read when the Log tab draws.
+    pub log: LogBuffer,
     pub local: PaneUi,
     pub remote: PaneUi,
     /// Whether the last snapshot had a live session (to move the focus when one appears).
@@ -67,6 +152,8 @@ impl UiState {
             tree: TreeUi::default(),
             dialog: None,
             prompt: None,
+            bottom: BottomUi::default(),
+            log: LogBuffer::new(),
             local: PaneUi::default(),
             remote: PaneUi::default(),
             was_connected: false,

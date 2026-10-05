@@ -337,3 +337,77 @@ fn chmod_go_to_and_import_dialogs_are_drawn() {
     ));
     insta::assert_snapshot!("import", draw(&dialog_ui(&app, import), &app));
 }
+
+fn bottom_screen(
+    tab: crate::ui_state::BottomTab,
+    focused: bool,
+    tweak: impl FnOnce(&mut filecargo_app_core::prelude::AppState),
+) -> String {
+    let mut app = connected_app();
+    app.queue = std::sync::Arc::new(crate::test_support::busy_queue());
+    tweak(&mut app);
+    let mut ui = synced(100, 30, &app);
+    ui.bottom.tab = tab;
+    if focused {
+        ui.focus = crate::ui_state::Focus::Bottom;
+    }
+    draw(&ui, &app)
+}
+
+#[test]
+fn the_queue_tab_shows_progress_speed_eta_and_totals() {
+    use crate::ui_state::BottomTab;
+    insta::assert_snapshot!(bottom_screen(BottomTab::Queue, true, |_| {}));
+}
+
+#[test]
+fn a_paused_queue_says_so_in_the_footer() {
+    use crate::ui_state::BottomTab;
+    let screen = bottom_screen(BottomTab::Queue, false, |app| {
+        let mut queue = (*app.queue).clone();
+        queue.processing = false;
+        app.queue = std::sync::Arc::new(queue);
+    });
+    assert!(screen.contains("PAUSED"));
+}
+
+#[test]
+fn completed_and_failed_tabs_list_their_items() {
+    use crate::ui_state::BottomTab;
+    insta::assert_snapshot!(
+        "completed",
+        bottom_screen(BottomTab::Completed, true, |_| {})
+    );
+    insta::assert_snapshot!("failed", bottom_screen(BottomTab::Failed, true, |_| {}));
+}
+
+#[test]
+fn empty_lists_say_what_they_are_for() {
+    use crate::ui_state::BottomTab;
+    let screen = bottom_screen(BottomTab::Queue, false, |app| {
+        app.queue = std::sync::Arc::new(Default::default());
+    });
+    assert!(screen.contains("Nothing queued"));
+}
+
+#[test]
+fn the_log_tab_shows_the_newest_lines_with_levels() {
+    use crate::ui_state::BottomTab;
+    use filecargo_app_core::prelude::{LogLevel, LogLine};
+    let mut app = connected_app();
+    app.queue = std::sync::Arc::new(Default::default());
+    let mut ui = synced(100, 30, &app);
+    ui.bottom.tab = BottomTab::Log;
+    for (n, level) in [LogLevel::Info, LogLevel::Warn, LogLevel::Error]
+        .into_iter()
+        .enumerate()
+    {
+        ui.log.push(LogLine {
+            time: std::time::UNIX_EPOCH + std::time::Duration::from_secs(50_000 + n as u64),
+            level,
+            target: "filecargo::session".into(),
+            message: format!("event number {n}"),
+        });
+    }
+    insta::assert_snapshot!(draw(&ui, &app));
+}
