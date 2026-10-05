@@ -20,7 +20,7 @@ tested against an in-memory fake channel; one integration test uses the docker S
 `vt100 = "0.16"`, `tokio` (sync, time, rt), `tracing`.
 
 ## Task List
-- [ ] T1: Crate + `Key` / `Mods` / `Modes` + `encode` with xterm table tests (S)
+- [x] T1: Crate + `Key` / `Mods` / `Modes` + `encode` with xterm table tests (S)
 - [ ] T2: `spawn` + `TerminalHandle` over a fake channel: feed, generation, resize coalescing, paste (bracketed or not), scrollback + return-to-live, exit status, close (M)
 - [ ] T3: Integration vs docker SSH: `printf`, resize + `stty size` (S)
 ### Checkpoint: all 7 AC green, coverage ≥ 80 %, human review
@@ -39,3 +39,7 @@ None.
 
 ## Hand-off Notes
 _Appended per task during implementation._
+
+### T1 Key encoding (done)
+- `keys.rs`: `Key`, `Mods` (`NONE/CTRL/ALT/SHIFT` consts), `Modes`, pure `encode`. `vt100` is pinned `=0.16.2` in the workspace. The test table has ~65 rows (every variant × the modifier combinations that matter) asserted in **both** cursor modes; a compile-time exhaustiveness check forces new `Key` variants into it.
+- xterm decisions made explicit: Shift+Tab = `CSI Z`; Ctrl+Backspace = `0x08`; Ctrl+Enter/Shift+Enter = `\r`; modified cursor keys use `CSI 1;<m>X` even in application mode; F1–F4 modified = `CSI 1;<m>P..S`; `F(0)` / `F(13+)` encode to nothing; `Modes::application_keypad` is carried for the API but no `Key` is a keypad key in v1.
