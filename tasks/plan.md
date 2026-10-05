@@ -65,7 +65,7 @@ T1 workspace + Paths ─┬─ T2 CI workflow (independent)
 - [ ] AC1–AC5 pass; proptest round-trip green at 1,000 cases; human review of the file format and API
 
 ### Phase 3: Settings and secrets
-- [ ] T6: Settings: defaults, validation, persistence (S)
+- [x] T6: Settings: defaults, validation, persistence (S)
 - [ ] T7: Secrets: store trait, keychain, cleanup cascade, no-leak test (M)
 
 ### Checkpoint C: Secrets

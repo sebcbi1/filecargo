@@ -7,6 +7,7 @@ use crate::error::ConfigError;
 use crate::fsio;
 use crate::model::{Folder, NodeId, Site};
 use crate::paths::Paths;
+use crate::settings::{ConnectionSettings, LogSettings, Settings, TransferSettings, UiSettings};
 use crate::tree::{ServerTree, TreeOp};
 
 const FILE_VERSION: u32 = 1;
@@ -20,6 +21,51 @@ struct ServersFile {
     sites: Vec<Site>,
 }
 
+const SETTINGS_VERSION: u32 = 1;
+
+fn settings_version() -> u32 {
+    SETTINGS_VERSION
+}
+
+/// Explicit fields instead of `#[serde(flatten)]`, which discards the error position that
+/// [`parse_toml`] reports as a line number.
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
+struct SettingsFile {
+    version: u32,
+    transfers: TransferSettings,
+    connection: ConnectionSettings,
+    ui: UiSettings,
+    log: LogSettings,
+}
+
+impl Default for SettingsFile {
+    fn default() -> Self {
+        Self::new(Settings::default())
+    }
+}
+
+impl SettingsFile {
+    fn new(settings: Settings) -> Self {
+        Self {
+            version: settings_version(),
+            transfers: settings.transfers,
+            connection: settings.connection,
+            ui: settings.ui,
+            log: settings.log,
+        }
+    }
+
+    fn into_settings(self) -> Settings {
+        Settings {
+            transfers: self.transfers,
+            connection: self.connection,
+            ui: self.ui,
+            log: self.log,
+        }
+    }
+}
+
 /// Owns the server tree and its on-disk representation.
 ///
 /// Several processes (the GUI and the TUI) may share one config directory. Every write takes
@@ -29,8 +75,11 @@ struct ServersFile {
 pub struct ConfigStore {
     paths: Paths,
     tree: ServerTree,
+    settings: Settings,
     /// Bytes of `servers.toml` as last read or written (`None` = file did not exist).
     loaded: Option<Vec<u8>>,
+    /// Same for `settings.toml`.
+    settings_loaded: Option<Vec<u8>>,
 }
 
 impl ConfigStore {
@@ -40,10 +89,14 @@ impl ConfigStore {
     pub fn open(paths: Paths) -> Result<Self, ConfigError> {
         let loaded = fsio::read_optional(&paths.servers())?;
         let tree = parse_tree(&paths, loaded.as_deref())?;
+        let settings_loaded = fsio::read_optional(&paths.settings())?;
+        let settings = parse_settings(&paths, settings_loaded.as_deref())?;
         Ok(Self {
             paths,
             tree,
+            settings,
             loaded,
+            settings_loaded,
         })
     }
 
@@ -51,14 +104,45 @@ impl ConfigStore {
         &self.tree
     }
 
-    /// Re-reads `servers.toml` if another instance changed it. On error the in-memory tree
-    /// is kept as it was.
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// Re-reads `servers.toml` and `settings.toml` if another instance changed them. On error
+    /// the in-memory state is kept as it was.
     pub fn reload(&mut self) -> Result<(), ConfigError> {
         let current = fsio::read_optional(&self.paths.servers())?;
-        if current != self.loaded {
-            self.tree = parse_tree(&self.paths, current.as_deref())?;
+        let current_settings = fsio::read_optional(&self.paths.settings())?;
+        let tree = (current != self.loaded)
+            .then(|| parse_tree(&self.paths, current.as_deref()))
+            .transpose()?;
+        let settings = (current_settings != self.settings_loaded)
+            .then(|| parse_settings(&self.paths, current_settings.as_deref()))
+            .transpose()?;
+        if let Some(tree) = tree {
+            self.tree = tree;
             self.loaded = current;
         }
+        if let Some(settings) = settings {
+            self.settings = settings;
+            self.settings_loaded = current_settings;
+        }
+        Ok(())
+    }
+
+    /// Changes the settings with `f`, validates them, and writes `settings.toml` atomically,
+    /// on top of the latest on-disk state. On any error nothing is written and the in-memory
+    /// settings are unchanged.
+    pub fn update_settings(&mut self, f: impl FnOnce(&mut Settings)) -> Result<(), ConfigError> {
+        let _lock = fsio::lock_exclusive(&self.paths.lock())?;
+        self.reload()?;
+        let mut next = self.settings.clone();
+        f(&mut next);
+        next.validate()?;
+        let bytes = serialize_settings(&next)?.into_bytes();
+        fsio::write_atomic(&self.paths.settings(), &bytes)?;
+        self.settings = next;
+        self.settings_loaded = Some(bytes);
         Ok(())
     }
 
@@ -105,18 +189,7 @@ fn parse_tree(paths: &Paths, bytes: Option<&[u8]>) -> Result<ServerTree, ConfigE
     let Some(bytes) = bytes else {
         return Ok(ServerTree::default());
     };
-    let text = String::from_utf8_lossy(bytes);
-    let file: ServersFile = toml::from_str(&text).map_err(|e| {
-        let line = e
-            .span()
-            .map(|s| text[..s.start.min(text.len())].matches('\n').count() + 1)
-            .unwrap_or(1);
-        ConfigError::Parse {
-            path: path.clone(),
-            line,
-            msg: e.message().to_string(),
-        }
-    })?;
+    let file: ServersFile = parse_toml(&path, bytes)?;
     if file.version > FILE_VERSION {
         return Err(ConfigError::UnsupportedVersion {
             path,
@@ -125,6 +198,47 @@ fn parse_tree(paths: &Paths, bytes: Option<&[u8]>) -> Result<ServerTree, ConfigE
         });
     }
     Ok(ServerTree::from_parts(file.folders, file.sites)?)
+}
+
+fn parse_settings(paths: &Paths, bytes: Option<&[u8]>) -> Result<Settings, ConfigError> {
+    let path = paths.settings();
+    let Some(bytes) = bytes else {
+        return Ok(Settings::default());
+    };
+    let file: SettingsFile = parse_toml(&path, bytes)?;
+    if file.version > SETTINGS_VERSION {
+        return Err(ConfigError::UnsupportedVersion {
+            path,
+            found: file.version,
+            supported: SETTINGS_VERSION,
+        });
+    }
+    let settings = file.into_settings();
+    settings.validate()?;
+    Ok(settings)
+}
+
+fn parse_toml<T: serde::de::DeserializeOwned>(
+    path: &std::path::Path,
+    bytes: &[u8],
+) -> Result<T, ConfigError> {
+    let text = String::from_utf8_lossy(bytes);
+    toml::from_str(&text).map_err(|e| {
+        let line = e
+            .span()
+            .map(|s| text[..s.start.min(text.len())].matches('\n').count() + 1)
+            .unwrap_or(1);
+        ConfigError::Parse {
+            path: path.to_path_buf(),
+            line,
+            msg: e.message().to_string(),
+        }
+    })
+}
+
+fn serialize_settings(settings: &Settings) -> Result<String, ConfigError> {
+    toml::to_string(&SettingsFile::new(settings.clone()))
+        .map_err(|e| ConfigError::Serialize(e.to_string()))
 }
 
 fn serialize(tree: &ServerTree) -> Result<String, ConfigError> {

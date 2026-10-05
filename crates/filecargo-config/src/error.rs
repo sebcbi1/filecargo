@@ -58,4 +58,9 @@ pub enum ValidationError {
     MoveIntoDescendant,
     #[error("duplicate id {0}")]
     DuplicateId(String),
+    #[error("setting {field} {rule}")]
+    InvalidSetting {
+        field: &'static str,
+        rule: &'static str,
+    },
 }
