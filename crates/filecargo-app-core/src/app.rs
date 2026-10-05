@@ -24,6 +24,8 @@ use crate::state::{
     AppState, ConnectStep, Level, Notice, NoticeId, Pane, PaneId, Prompt, PromptAnswer, PromptId,
     PromptKind, SessionState, StartError, TerminalState,
 };
+use crate::transfers::{RefreshSchedule, Shared};
+use filecargo_transfer::{Direction, Queue, QueueEvent};
 
 /// Published snapshots are coalesced to at most this many per second.
 const SNAPSHOTS_PER_SECOND: u64 = 30;
@@ -105,6 +107,10 @@ impl App {
         log.set_level(settings_level);
         let (commands_tx, commands_rx) = mpsc::unbounded_channel();
         let (publisher, snapshots) = watch::channel(Arc::new(state.clone()));
+        let shared = Arc::new(Shared {
+            tree: Mutex::new(state.servers.clone()),
+            timeouts: Mutex::new(state.settings.connection.clone()),
+        });
         let mut ctx = ConnectContext::new(
             paths.clone(),
             secrets.clone(),
@@ -127,6 +133,10 @@ impl App {
             prompts: VecDeque::new(),
             replies: HashMap::new(),
             actions: HashMap::new(),
+            shared,
+            queue: None,
+            local_refresh: RefreshSchedule::default(),
+            remote_refresh: RefreshSchedule::default(),
             local_seq: 0,
             ctx,
             live: None,
@@ -187,6 +197,7 @@ pub(crate) enum Msg {
     LocalListed(LocalListing),
     RemoteListed(RemoteListing),
     OpDone(OpDone),
+    Queue(QueueEvent),
     /// The connect task found out how far it got.
     ConnectStep {
         epoch: u64,
@@ -293,6 +304,11 @@ pub(crate) struct Core {
     pub(crate) replies: HashMap<PromptId, oneshot::Sender<PromptAnswer>>,
     /// What to do when a prompt the app raised itself is confirmed.
     pub(crate) actions: HashMap<PromptId, PromptAction>,
+    /// Sites and timeouts as the queue's workers see them.
+    pub(crate) shared: Arc<Shared>,
+    pub(crate) queue: Option<Queue>,
+    pub(crate) local_refresh: RefreshSchedule,
+    pub(crate) remote_refresh: RefreshSchedule,
     next_prompt: u64,
     next_notice: u64,
 }
@@ -301,13 +317,17 @@ impl Core {
     async fn run(mut self, mut messages: mpsc::UnboundedReceiver<Msg>) {
         let start = self.state.local.path.clone();
         self.list_local(start);
+        self.start_queue().await;
         let interval = Duration::from_millis(1000 / SNAPSHOTS_PER_SECOND);
         loop {
-            let wake = if self.dirty {
+            let mut wake = if self.dirty {
                 self.last_publish + interval
             } else {
                 Instant::now() + Duration::from_secs(3600)
             };
+            if let Some(due) = self.next_refresh_due() {
+                wake = wake.min(due);
+            }
             tokio::select! {
                 message = messages.recv() => match message {
                     Some(Msg::Command(command)) => self.handle_command(command),
@@ -315,6 +335,7 @@ impl Core {
                     Some(Msg::LocalListed(listing)) => self.on_local_listed(listing),
                     Some(Msg::RemoteListed(listing)) => self.on_remote_listed(listing),
                     Some(Msg::OpDone(done)) => self.on_op_done(done),
+                    Some(Msg::Queue(event)) => self.on_queue_event(event),
                     Some(Msg::Connected(connected)) => self.on_connected(connected),
                     Some(Msg::ConnectStep { epoch, step }) => self.on_connect_step(epoch, step),
                     Some(Msg::Shutdown(ack)) => {
@@ -327,6 +348,7 @@ impl Core {
                 },
                 () = tokio::time::sleep_until(wake) => {}
             }
+            self.run_due_refreshes();
             if self.dirty && self.last_publish.elapsed() >= interval {
                 self.publish_now();
             }
@@ -346,6 +368,9 @@ impl Core {
     }
 
     async fn shutdown(&mut self) {
+        if let Some(queue) = self.queue.take() {
+            queue.shutdown().await;
+        }
         // sessions and the queue are closed here as they are added
     }
 
@@ -410,6 +435,13 @@ impl Core {
             | Command::Rename { .. }
             | Command::Delete { .. }
             | Command::Chmod { .. }) => self.remote_operation(command),
+            Command::Upload { names } => self.start_transfers(Direction::Upload, &names),
+            Command::Download { names } => self.start_transfers(Direction::Download, &names),
+            command @ (Command::QueueRetry(_)
+            | Command::QueueRetryFailed
+            | Command::QueueRemove(_)
+            | Command::QueueClearCompleted
+            | Command::QueueSetProcessing(_)) => self.queue_command(command),
             Command::Connect(site) => self.connect(site, None),
             Command::Disconnect => self.disconnect(),
             Command::SetSort {
@@ -454,6 +486,7 @@ impl Core {
         self.state.settings = Arc::new(store.settings().clone());
         self.state.startup_error = None;
         self.store = Some(store);
+        self.sync_shared();
         self.changed();
     }
 
@@ -524,6 +557,10 @@ impl Core {
                 let hidden_before = self.state.settings.ui.show_hidden;
                 self.state.settings = Arc::new(store.settings().clone());
                 self.log.set_level(self.state.settings.log.level);
+                self.sync_shared();
+                if let Some(queue) = &self.queue {
+                    queue.set_limits(self.queue_limits());
+                }
                 self.changed();
                 if self.state.settings.ui.show_hidden != hidden_before {
                     // what is listed depends on it

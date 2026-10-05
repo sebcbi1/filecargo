@@ -78,6 +78,7 @@ impl Core {
         match store.apply(op) {
             Ok(_) => {
                 self.state.servers = Arc::new(store.tree().clone());
+                self.sync_shared();
                 self.changed();
             }
             Err(error) => self.message(
@@ -107,6 +108,7 @@ impl Core {
         ) {
             Ok(report) => {
                 self.state.servers = Arc::new(store.tree().clone());
+                self.sync_shared();
                 tracing::info!(target: "filecargo::app", imported = report.imported.len(), skipped = report.skipped.len(), "FileZilla import finished");
                 let (level, body) = describe(&report);
                 self.message(level, "FileZilla import", body);

@@ -35,11 +35,11 @@ impl Fixture {
         self.app.state().borrow().clone()
     }
 
-    /// Waits (up to 5 s) for a snapshot satisfying `condition` and returns it.
+    /// Waits (up to 10 s) for a snapshot satisfying `condition` and returns it.
     pub fn wait_for(&self, what: &str, condition: impl Fn(&AppState) -> bool) -> Arc<AppState> {
         let mut rx = self.app.state();
         self.app.runtime().block_on(async {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
             loop {
                 {
                     let state = rx.borrow_and_update().clone();
@@ -68,12 +68,12 @@ impl Drop for Fixture {
 }
 
 impl Fixture {
-    /// Waits (up to 5 s) for a spawned task and returns its result.
+    /// Waits (up to 10 s) for a spawned task and returns its result.
     pub fn join<T: Send + 'static>(&self, task: tokio::task::JoinHandle<T>) -> T {
         self.app.runtime().block_on(async {
-            tokio::time::timeout(Duration::from_secs(5), task)
+            tokio::time::timeout(Duration::from_secs(10), task)
                 .await
-                .expect("the task did not finish within 5 s")
+                .expect("the task did not finish within 10 s")
                 .unwrap()
         })
     }

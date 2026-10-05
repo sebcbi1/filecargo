@@ -13,7 +13,12 @@ use crate::state::{PromptAnswer, PromptId, PromptKind};
 /// A request from a background task: show `kind`, send the answer back on `reply`.
 /// What a confirmed prompt does, for prompts the app raises itself (not for background tasks).
 pub(crate) enum PromptAction {
-    Delete { names: Vec<String> },
+    Delete {
+        names: Vec<String>,
+    },
+    Conflict {
+        transfer: filecargo_transfer::TransferId,
+    },
 }
 
 pub(crate) struct PromptRequest {
@@ -82,6 +87,7 @@ impl Core {
                 (PromptAction::Delete { names }, PromptAnswer::Confirm(true)) => {
                     self.run_delete(names)
                 }
+                (PromptAction::Conflict { transfer }, _) => self.answer_conflict(transfer, &answer),
                 (PromptAction::Delete { .. }, _) => {}
             }
         }

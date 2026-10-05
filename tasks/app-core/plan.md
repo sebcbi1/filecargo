@@ -47,7 +47,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 - [x] T7: Remote ops: mkdir, rename, delete with confirm (recursive), chmod (S)
 ### Checkpoint B: AC3, AC4, AC5, AC8, AC9 green
 ### Phase 3: Transfers and terminal
-- [ ] T8: Queue wiring: `Connector` adapter over `SessionFactory`, `Upload`/`Download`, conflict prompts, queue commands, pane refresh debounce, snapshot rate (M)
+- [x] T8: Queue wiring: `Connector` adapter over `SessionFactory`, `Upload`/`Download`, conflict prompts, queue commands, pane refresh debounce, snapshot rate (M)
 - [ ] T9: Terminal commands, `TerminalState`, `Quit` + `ConfirmQuit` + shutdown timeout, re-exports module (S)
 ### Checkpoint C: all 11 AC green, coverage ≥ 80 %, human review
 
@@ -114,3 +114,11 @@ _Appended per task during implementation._
 - `ops.rs`: `Mkdir`, `Rename`, `Delete`, `Chmod` act on **names of the remote pane's current directory**; a name must be one plain path component (`valid_name`), unknown names are ignored, an empty selection does nothing. Each runs in a spawned task and reports `Msg::OpDone`; success refreshes the pane, failure raises an error `Notice` ("Could not create the folder "sub": already exists: ...") plus a `warn` log line, never touches the pane's contents (it is refreshed anyway, since a partial failure may have changed the server), and a retryable error also marks the session lost (reconnect on the next command).
 - `Delete` asks `ConfirmDelete { pane, names, recursive }` first when `settings.ui.confirm_delete`; `recursive` is true when any selected entry is a directory. App-raised prompts keep their follow-up in `PromptAction` (`Core.actions`); only `Confirm(true)` runs it, anything else drops it. Directories are removed with `remove_all`, files and symlinks with `remove_file`.
 - 7 tests (mkdir/rename + refresh, decline deletes nothing, confirm deletes a directory with its contents, no-confirm setting, unknown names, chmod 0o600 on both files, error notices incl. invalid names).
+
+### T8 Transfers wiring (done)
+- `transfers.rs`: the queue starts with the actor (`Queue::start` on `paths.queue()`, so items left by the previous run reappear); its events are forwarded as `Msg::Queue`. `QueueConnector` adapts the app's `SessionFactory` to `transfer::Connector` with a clone of the **shared `ConnectContext`** (same `SessionTrust`, so workers never re-prompt for answered questions) and a `Shared { tree, timeouts }` view that the actor keeps in step (`sync_shared` after every tree/settings change; a deleted site fails the item with "site was deleted"). `UpdateSettings` also calls `queue.set_limits`.
+- `Upload` / `Download { names }` build one `NewTransfer` per name found in the **source pane's entries** (unknown names, symlinks and special files are skipped; `is_dir` and size come from the entry) between `local.path/name` and `remote.path/name`; without a session they raise a notice.
+- `QueueEvent`s: `Changed` / `ItemFinished` / `Idle` refresh `AppState.queue` (the queue's own 10 Hz cap carries through); `ConflictAsked` becomes a `PromptKind::Conflict` prompt whose answer (`PromptAnswer::Conflict(decision)`) is passed to `queue.resolve`; any other answer (dismiss) is read as **skip**, so a closed dialog never leaves an item waiting forever. Failed items log their reason.
+- **Pane refresh debounce**: `RefreshSchedule` (due time = max(now, last refresh + 1 s)) per pane; a finished item refreshes the pane whose directory it landed in (remote for uploads into the shown directory, local for downloads), and `Idle` refreshes both so the last files of a batch always show up; the actor's wake-up includes the next due time.
+- Queue commands (`QueueRetry`, `QueueRetryFailed`, `QueueRemove`, `QueueClearCompleted`, `QueueSetProcessing`) are thin calls.
+- AC11 verified with a 1,000-file upload: ≤ 30 snapshots/s, and whenever the local pane's `generation` is unchanged between snapshots its entries are the **same `Arc`** (pointer equality). 8 tests (+ `Entry` re-exported). The test harness timeout was raised to 10 s after one run, taken while a compile was hogging the machine, missed a 5 s wait.
