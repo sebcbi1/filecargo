@@ -99,3 +99,78 @@ fn without_color_emphasis_comes_from_modifiers_only() {
         "the selection marker still shows: {text}"
     );
 }
+
+fn with_servers() -> filecargo_app_core::prelude::AppState {
+    let mut app = app();
+    app.servers = std::sync::Arc::new(crate::test_support::sample_tree());
+    app
+}
+
+fn session_info() -> filecargo_app_core::prelude::SessionInfo {
+    filecargo_app_core::prelude::SessionInfo {
+        protocol: filecargo_app_core::prelude::Protocol::Sftp,
+        banner: None,
+        tls: None,
+        home: filecargo_app_core::prelude::RemotePath::root(),
+    }
+}
+
+#[test]
+fn disconnected_with_a_server_tree_at_100x30() {
+    let app = with_servers();
+    let mut ui = synced(120, 30, &app);
+    ui.focus = crate::ui_state::Focus::Tree;
+    ui.tree.expanded = app
+        .servers
+        .folders()
+        .iter()
+        .filter(|f| f.name == "Work")
+        .map(|f| f.id)
+        .collect();
+    ui.tree.cursor = 3;
+    insta::assert_snapshot!(draw(&ui, &app));
+}
+
+#[test]
+fn connecting_shows_the_step_in_the_remote_title() {
+    use filecargo_app_core::prelude::{ConnectStep, SessionState};
+    let mut app = with_servers();
+    let id = crate::test_support::site_id(&app.servers, "prod-web");
+    app.session = SessionState::Connecting {
+        site: id,
+        step: ConnectStep::Authenticating,
+    };
+    let mut ui = synced(120, 30, &app);
+    ui.tree.expanded = app.servers.folders().iter().map(|f| f.id).collect();
+    insta::assert_snapshot!(draw(&ui, &app));
+}
+
+#[test]
+fn connected_listing_shows_the_url_and_marks_the_connected_site() {
+    use filecargo_app_core::prelude::SessionState;
+    let mut app = connected_app();
+    app.servers = std::sync::Arc::new(crate::test_support::sample_tree());
+    let id = crate::test_support::site_id(&app.servers, "prod-web");
+    app.session = SessionState::Connected {
+        site: id,
+        info: session_info(),
+    };
+    let mut ui = synced(120, 30, &app);
+    ui.tree.expanded = app.servers.folders().iter().map(|f| f.id).collect();
+    ui.focus = crate::ui_state::Focus::Remote;
+    ui.remote.cursor = 2;
+    insta::assert_snapshot!(draw(&ui, &app));
+}
+
+#[test]
+fn a_failed_connection_shows_the_error_in_the_title() {
+    use filecargo_app_core::prelude::SessionState;
+    let mut app = with_servers();
+    let id = crate::test_support::site_id(&app.servers, "staging");
+    app.session = SessionState::Failed {
+        site: id,
+        error: "connection refused".to_owned(),
+    };
+    let ui = synced(100, 30, &app);
+    insta::assert_snapshot!(draw(&ui, &app));
+}

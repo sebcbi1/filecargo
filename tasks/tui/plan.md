@@ -31,7 +31,7 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 - [x] T2: Layout, local pane `Table`, `UiState` focus/cursor/selection, reducer for navigation and selection, too-small screen (M)
 ### Checkpoint A: binary browses local files; AC3, AC5 green; first snapshots reviewed — reached
 ### Phase 2: Servers and sessions
-- [ ] T3: Server tree (`tui-tree-widget`), tree bindings, connect/disconnect, remote pane (M)
+- [x] T3: Server tree (`tui-tree-widget`), tree bindings, connect/disconnect, remote pane (M)
 - [ ] T4: Form toolkit + site editor (new/edit) + new folder/rename/move/delete dialogs (M)
 - [ ] T5: Prompt dialogs for every `PromptKind` + chmod, go-to-path, import dialogs (M)
 ### Checkpoint B: connect to a site with password + host-key prompt, browse, and edit sites, all in the binary
@@ -72,3 +72,10 @@ _Appended per task during implementation._
 - Reducer (file panes): cursor keys (Up/Down/PgUp/PgDn/Home/End + `j`/`k`), `Enter` (dir → `Navigate`, `..` → `Up`, **file → Upload/Download of that file**), `Backspace`, `Space`/`Ins`, `*`, `Ctrl-a`, `F5`/`t` (selection or cursor row, clears the selection), `F8`/`Del` (remote only), `Ctrl-r`, `.` (flips `show_hidden` through `UpdateSettings`), `s` (cycles Name↑↓ → Size↑↓ → Modified↑↓), `Tab`/`Shift-Tab` over what exists, `F9`, `F10`, `q`/`Ctrl-q`. Dialog-based keys (`F7`, `F2`, `c`, `g`, `F1`, `Alt-n`) arrive with their tasks.
 - View: bordered panes with `Name / Size / Modified` tables (dirs `name/` bold blue, selected rows `*` + bold yellow, cursor row reversed when focused and underlined otherwise, `NO_COLOR` falls back to bold/reverse/markers), local title with `~`, remote placeholder, a pane error in red on its last row. **Times are shown in UTC** (no local-time conversion without a time-zone dependency; revisit when the GUI needs it).
 - Tests: 27 (`layout` 5, `pane` formatting 3, `reducer` 13 incl. AC3 cases, 6 view tests with 4 reviewed `insta` snapshots: disconnected 100×30 / 80×24, connected, too small; style checks for cursor/selection/NO_COLOR). Driven through a pseudo-terminal: exits cleanly after cursor keys + `q`.
+
+### T3 Server tree + remote pane (done)
+- **Deviation:** the tree is **not** drawn with `tui-tree-widget`. `tree.rs` flattens `ServerTree` into `TreeRow`s (depth, name, folder/site kind) over a `HashSet<FolderId>` of open folders, and the view renders them as a plain list. That keeps cursor, expansion and "go to parent" in a pure, unit-tested model and avoids the widget's borrowed-text rebuild per frame; the dependency was removed. (The spec's note about node ids as `Vec<String>` paths no longer applies.)
+- Keymap gained the whole **Tree** context (Up/Down/PgUp/PgDn/Home/End, Right/Left, Enter, `x`, `n`, `N`, `e`, `r`, `D`, `m`, `Del`, `i`, plus `h j k l`). The table is `#[rustfmt::skip]` so it stays one binding per line. Implemented now: movement, expand / collapse (`Left` on a site or closed folder jumps to the parent), `Enter` (site → `Connect`, folder → toggle), `x` → `Disconnect`, `D` → `Tree(Duplicate)`; `n N e r m Del i` open dialogs in T4/T5.
+- The focus moves from the tree to the remote pane when a connection comes up (once; it does not keep stealing it). Deleting folders elsewhere prunes the expansion set and clamps the cursor.
+- View: `Servers` list (`▾`/`▸` folders in bold, `●` connected in green, `◌` connecting, `✗` failed, empty-tree hint), remote title carries the state (`Remote sftp://host/path`, `Remote (authenticating prod-web…)`, `Remote (failed: …)`, `Remote (not connected)`), placeholder text per state. The `site_id` / `sample_tree` fixtures live in `test_support`.
+- 39 unit tests (12 new reducer tests for the tree and 4 new snapshots: disconnected with tree, connecting, connected listing, failed).

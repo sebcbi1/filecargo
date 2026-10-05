@@ -2,8 +2,8 @@
 source: crates/filecargo-tui/src/view_tests.rs
 expression: "draw(&ui, &app)"
 ---
-"┌ Servers ─────────┐┌ Local ~/projects ────────────────────┐┌ Remote /var/www ─────────────────────┐"
-"│                  ││  Name              Size   Modified   ││  Name              Size   Modified   │"
+"┌ Servers ─────────┐┌ Local ~/projects ────────────────────┐┌ Remote (not connected) ──────────────┐"
+"│No servers yet. Pr││  Name              Size   Modified   ││  Name              Size   Modified   │"
 "│                  ││  ..                                  ││  ..                                  │"
 "│                  ││  docs/                    09-29 06:00││  html/                    09-28 20:00│"
 "│                  ││  src/                     09-28 10:00││  index.php           4.3K 09-28 22:00│"

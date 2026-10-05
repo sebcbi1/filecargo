@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use crate::tree::TreeUi;
+
 /// The area keys go to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -35,8 +37,11 @@ pub struct UiState {
     /// `None`: shown when the terminal is at least 100 columns wide.
     pub tree_override: Option<bool>,
     pub maximize_bottom: bool,
+    pub tree: TreeUi,
     pub local: PaneUi,
     pub remote: PaneUi,
+    /// Whether the last snapshot had a live session (to move the focus when one appears).
+    pub was_connected: bool,
     /// For "5 minutes ago"-style dates; set by the loop so drawing stays pure.
     pub now: SystemTime,
     /// For abbreviating paths as `~/...`.
@@ -53,8 +58,10 @@ impl UiState {
             quit_requested: false,
             tree_override: None,
             maximize_bottom: false,
+            tree: TreeUi::default(),
             local: PaneUi::default(),
             remote: PaneUi::default(),
+            was_connected: false,
             now: SystemTime::now(),
             home: std::env::home_dir(),
             color: std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty()),

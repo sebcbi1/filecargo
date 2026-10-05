@@ -9,6 +9,7 @@ use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 
 use crate::layout;
 use crate::pane::{PaneView, abbreviate, format_size, format_time, pane_view};
+use crate::tree::{self, RowKind};
 use crate::ui_state::{Focus, PaneUi, UiState};
 
 /// Colors only when allowed; emphasis otherwise comes from bold / reverse / markers.
@@ -54,7 +55,7 @@ pub fn render(frame: &mut Frame, ui: &UiState, app: &AppState) {
     let look = Look { color: ui.color };
     let areas = layout::areas(area, ui.tree_visible(), ui.maximize_bottom);
     if let Some(tree) = areas.tree {
-        placeholder(frame, tree, " Servers ", ui.focus == Focus::Tree, &look);
+        render_tree(frame, tree, ui, app, &look);
     }
     if !ui.maximize_bottom {
         render_pane(frame, areas.local, Focus::Local, ui, app, &look);
@@ -90,12 +91,17 @@ fn render_pane(
     let Some(view) = pane_view(app, focus) else {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Remote (not connected) ")
+            .title(remote_title(app, None))
             .border_style(look.border(focused));
         let inner = block.inner(area);
         frame.render_widget(block, area);
         frame.render_widget(
-            Paragraph::new("Select a server and press Enter.").alignment(Alignment::Center),
+            Paragraph::new(match app.session {
+                SessionState::Connecting { .. } => "Connecting…",
+                SessionState::Failed { .. } => "Press Enter on the server to try again.",
+                _ => "Select a server and press Enter.",
+            })
+            .alignment(Alignment::Center),
             Rect {
                 y: inner.y + inner.height / 2,
                 height: 1,
@@ -114,7 +120,11 @@ fn render_pane(
     } else {
         view.path.clone()
     };
-    let mut title = format!(" {label} {shown} ");
+    let mut title = if focus == Focus::Local {
+        format!(" {label} {shown} ")
+    } else {
+        remote_title(app, Some(&shown))
+    };
     if view.loading {
         title.push_str("… ");
     }
@@ -218,4 +228,101 @@ fn pane_table<'a>(
         ],
     )
     .header(header)
+}
+
+fn scheme(protocol: Protocol) -> &'static str {
+    match protocol {
+        Protocol::Sftp => "sftp",
+        Protocol::Ftp => "ftp",
+        Protocol::FtpsExplicit => "ftpes",
+        Protocol::FtpsImplicit => "ftps",
+    }
+}
+
+fn site_of(app: &AppState, id: SiteId) -> Option<&Site> {
+    app.servers.site(id)
+}
+
+/// The remote pane's title carries the connection state.
+fn remote_title(app: &AppState, path: Option<&str>) -> String {
+    match &app.session {
+        SessionState::Disconnected => " Remote (not connected) ".to_owned(),
+        SessionState::Connecting { site, step } => {
+            let name = site_of(app, *site).map_or("?", |s| s.name.as_str());
+            let step = match step {
+                ConnectStep::Resolving => "resolving",
+                ConnectStep::Connecting => "connecting",
+                ConnectStep::Authenticating => "authenticating",
+                ConnectStep::Listing => "listing",
+            };
+            format!(" Remote ({step} {name}…) ")
+        }
+        SessionState::Connected { site, .. } => match site_of(app, *site) {
+            Some(s) => format!(
+                " Remote {}://{}{} ",
+                scheme(s.protocol),
+                s.host,
+                path.unwrap_or("/")
+            ),
+            None => " Remote ".to_owned(),
+        },
+        SessionState::Failed { error, .. } => format!(" Remote (failed: {error}) "),
+    }
+}
+
+fn render_tree(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, look: &Look) {
+    let focused = ui.focus == Focus::Tree;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Servers ")
+        .border_style(look.border(focused));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let rows = tree::rows(&app.servers, &ui.tree.expanded);
+    if rows.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No servers yet. Press n to add one, i to import."),
+            inner,
+        );
+        return;
+    }
+    let connected_site = match &app.session {
+        SessionState::Connected { site, .. } => Some(*site),
+        _ => None,
+    };
+    let mut lines = Vec::new();
+    for (index, row) in rows
+        .iter()
+        .enumerate()
+        .skip(ui.tree.offset)
+        .take(inner.height as usize)
+    {
+        let marker = match &row.kind {
+            RowKind::Folder { expanded: true, .. } => "▾",
+            RowKind::Folder { .. } => "▸",
+            RowKind::Site { id, .. } => match &app.session {
+                SessionState::Connected { site, .. } if site == id => "●",
+                SessionState::Connecting { site, .. } if site == id => "◌",
+                SessionState::Failed { site, .. } if site == id => "✗",
+                _ => " ",
+            },
+        };
+        let text = format!("{}{marker} {}", "  ".repeat(row.depth), row.name);
+        let mut style = Style::new();
+        if matches!(row.kind, RowKind::Folder { .. }) {
+            style = style.add_modifier(Modifier::BOLD);
+        }
+        if matches!(row.kind, RowKind::Site { id, .. } if Some(id) == connected_site) {
+            style = style.patch(look.tint(Color::Green));
+        }
+        if index == ui.tree.cursor {
+            style = style.add_modifier(if focused {
+                Modifier::REVERSED
+            } else {
+                Modifier::UNDERLINED
+            });
+        }
+        lines.push(Line::styled(text, style));
+    }
+    frame.render_widget(Paragraph::new(lines), inner);
 }

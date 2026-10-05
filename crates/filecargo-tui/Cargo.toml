@@ -22,7 +22,6 @@ futures-util.workspace = true
 ratatui.workspace = true
 tokio.workspace = true
 tui-term.workspace = true
-tui-tree-widget.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

@@ -100,3 +100,40 @@ pub fn draw(ui: &UiState, app: &AppState) -> String {
     terminal.draw(|frame| view::render(frame, ui, app)).unwrap();
     terminal.backend().to_string()
 }
+
+/// Work/{prod-web (sftp), staging (ftp)}, Personal/{blog (ftps)}, home-nas (sftp).
+pub fn sample_tree() -> ServerTree {
+    use filecargo_config::{ConfigStore, MemoryStore, Paths};
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = ConfigStore::open(
+        Paths::from_override(Some(dir.path().to_path_buf())),
+        Arc::new(MemoryStore::new()),
+    )
+    .unwrap();
+    let mut folder = |name: &str| match store
+        .apply(TreeOp::AddFolder {
+            name: name.into(),
+            parent: None,
+        })
+        .unwrap()
+    {
+        NodeId::Folder(id) => id,
+        NodeId::Site(_) => unreachable!(),
+    };
+    let (work, personal) = (folder("Work"), folder("Personal"));
+    let mut add = |name: &str, protocol, parent| {
+        let mut site = Site::new(name, protocol, format!("{name}.example.org"));
+        site.folder = parent;
+        store.apply(TreeOp::AddSite(site)).unwrap();
+    };
+    add("prod-web", Protocol::Sftp, Some(work));
+    add("staging", Protocol::Ftp, Some(work));
+    add("blog", Protocol::FtpsExplicit, Some(personal));
+    add("home-nas", Protocol::Sftp, None);
+    store.tree().clone()
+}
+
+/// The site called `name` in `tree`.
+pub fn site_id(tree: &ServerTree, name: &str) -> SiteId {
+    tree.sites().iter().find(|s| s.name == name).unwrap().id
+}

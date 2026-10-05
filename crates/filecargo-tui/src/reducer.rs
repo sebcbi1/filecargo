@@ -7,6 +7,7 @@ use ratatui::layout::Rect;
 use crate::keymap::{self, Action, Context};
 use crate::layout;
 use crate::pane::{PaneView, pane_view};
+use crate::tree::{self, RowKind};
 use crate::ui_state::{Focus, PaneUi, UiState};
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,7 @@ fn scroll_to_cursor(pane: &mut PaneUi, rows: usize) {
 /// Keeps `ui` consistent with a new snapshot: cursors in range and, per pane, selections that
 /// survive a refresh of the same directory but reset when another directory is shown.
 pub fn sync(ui: &mut UiState, app: &AppState) {
+    sync_tree(ui, app);
     for focus in [Focus::Local, Focus::Remote] {
         let rows = viewport(ui, focus);
         let Some(view) = pane_view(app, focus) else {
@@ -91,6 +93,45 @@ pub fn sync(ui: &mut UiState, app: &AppState) {
     if ui.focus == Focus::Remote && app.remote.is_none() {
         ui.focus = Focus::Local;
     }
+}
+
+/// Rows the tree pane can show.
+fn tree_viewport(ui: &UiState) -> usize {
+    let areas = layout::areas(
+        Rect {
+            x: 0,
+            y: 0,
+            width: ui.size.0,
+            height: ui.size.1,
+        },
+        ui.tree_visible(),
+        ui.maximize_bottom,
+    );
+    areas
+        .tree
+        .map_or(1, |a| usize::from(a.height.saturating_sub(2)))
+        .max(1)
+}
+
+/// Forgets folders that no longer exist and keeps the cursor on a row.
+fn sync_tree(ui: &mut UiState, app: &AppState) {
+    let existing: std::collections::HashSet<FolderId> =
+        app.servers.folders().iter().map(|f| f.id).collect();
+    ui.tree.expanded.retain(|id| existing.contains(id));
+    let rows = tree::rows(&app.servers, &ui.tree.expanded).len();
+    ui.tree.cursor = ui.tree.cursor.min(rows.saturating_sub(1));
+    let height = tree_viewport(ui);
+    if ui.tree.cursor < ui.tree.offset {
+        ui.tree.offset = ui.tree.cursor;
+    } else if ui.tree.cursor >= ui.tree.offset + height {
+        ui.tree.offset = ui.tree.cursor + 1 - height;
+    }
+    // a connection that just came up: move on to the remote pane
+    let connected = matches!(app.session, SessionState::Connected { .. }) && app.remote.is_some();
+    if connected && !ui.was_connected && ui.focus == Focus::Tree {
+        ui.focus = Focus::Remote;
+    }
+    ui.was_connected = connected;
 }
 
 fn focus_order(ui: &UiState, app: &AppState) -> Vec<Focus> {
@@ -283,6 +324,89 @@ fn transfer_command(focus: Focus, names: Vec<String>) -> Option<Command> {
     }
 }
 
+fn tree_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command> {
+    let rows = tree::rows(&app.servers, &ui.tree.expanded);
+    let last = rows.len().saturating_sub(1);
+    let height = tree_viewport(ui);
+    let current = rows.get(ui.tree.cursor).cloned();
+    let mut commands = Vec::new();
+    match action {
+        Action::Up => ui.tree.cursor = ui.tree.cursor.saturating_sub(1),
+        Action::Down => ui.tree.cursor = (ui.tree.cursor + 1).min(last),
+        Action::PageUp => {
+            ui.tree.cursor = ui
+                .tree
+                .cursor
+                .saturating_sub(height.saturating_sub(1).max(1))
+        }
+        Action::PageDown => {
+            ui.tree.cursor = (ui.tree.cursor + height.saturating_sub(1).max(1)).min(last)
+        }
+        Action::Home => ui.tree.cursor = 0,
+        Action::End => ui.tree.cursor = last,
+        Action::Expand => {
+            if let Some(tree::TreeRow {
+                kind: RowKind::Folder { id, .. },
+                ..
+            }) = &current
+            {
+                ui.tree.expanded.insert(*id);
+            }
+        }
+        Action::Collapse => match &current {
+            Some(tree::TreeRow {
+                kind: RowKind::Folder { id, expanded: true },
+                ..
+            }) => {
+                ui.tree.expanded.remove(id);
+            }
+            // on a site or a closed folder: go to the parent folder
+            _ => {
+                if let Some(parent) = tree::parent_row(&rows, ui.tree.cursor) {
+                    ui.tree.cursor = parent;
+                }
+            }
+        },
+        Action::Open => match &current {
+            Some(tree::TreeRow {
+                kind: RowKind::Site { id, .. },
+                ..
+            }) => commands.push(Command::Connect(*id)),
+            Some(tree::TreeRow {
+                kind: RowKind::Folder { id, expanded },
+                ..
+            }) => {
+                if *expanded {
+                    ui.tree.expanded.remove(id);
+                } else {
+                    ui.tree.expanded.insert(*id);
+                }
+            }
+            None => {}
+        },
+        Action::Disconnect => commands.push(Command::Disconnect),
+        Action::DuplicateSite => {
+            if let Some(tree::TreeRow {
+                kind: RowKind::Site { id, .. },
+                ..
+            }) = &current
+            {
+                commands.push(Command::Tree(TreeOp::Duplicate { site: *id }));
+            }
+        }
+        _ => {}
+    }
+    // keep the cursor row on screen (the row list may have changed size)
+    let rows_now = tree::rows(&app.servers, &ui.tree.expanded).len();
+    ui.tree.cursor = ui.tree.cursor.min(rows_now.saturating_sub(1));
+    if ui.tree.cursor < ui.tree.offset {
+        ui.tree.offset = ui.tree.cursor;
+    } else if ui.tree.cursor >= ui.tree.offset + height {
+        ui.tree.offset = ui.tree.cursor + 1 - height;
+    }
+    commands
+}
+
 pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> {
     match event {
         Event::Resize(width, height) => {
@@ -331,7 +455,8 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
                 },
                 other => match ui.focus {
                     Focus::Local | Focus::Remote => files_action(ui, app, other),
-                    _ => Vec::new(),
+                    Focus::Tree => tree_action(ui, app, other),
+                    Focus::Bottom => Vec::new(),
                 },
             }
         }
@@ -694,6 +819,129 @@ mod tests {
         sync(&mut ui, &app);
         assert_eq!(ui.focus, Focus::Local);
         assert_eq!(ui.remote, PaneUi::default());
+    }
+
+    fn tree_app() -> AppState {
+        let mut app = app();
+        app.servers = std::sync::Arc::new(crate::test_support::sample_tree());
+        app
+    }
+
+    fn tree_ui(app: &AppState) -> UiState {
+        let mut ui = synced(120, 30, app);
+        ui.focus = Focus::Tree;
+        ui
+    }
+
+    #[test]
+    fn tree_cursor_moves_and_folders_expand_collapse_and_toggle() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        let visible = |ui: &UiState| {
+            crate::tree::rows(&app.servers, &ui.tree.expanded)
+                .iter()
+                .map(|r| r.name.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(visible(&ui), ["Personal", "Work", "home-nas"]);
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        assert_eq!(ui.tree.cursor, 1, "Work");
+        on_event(&mut ui, &app, key(KeyCode::Right));
+        assert_eq!(
+            visible(&ui),
+            ["Personal", "Work", "prod-web", "staging", "home-nas"]
+        );
+        on_event(&mut ui, &app, key(KeyCode::Left));
+        assert_eq!(visible(&ui).len(), 3, "Left collapses an open folder");
+        on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert_eq!(visible(&ui).len(), 5, "Enter on a folder opens it");
+        on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert_eq!(visible(&ui).len(), 3, "and closes it again");
+        on_event(&mut ui, &app, key(KeyCode::End));
+        assert_eq!(ui.tree.cursor, 2);
+        on_event(&mut ui, &app, key(KeyCode::Down));
+        assert_eq!(ui.tree.cursor, 2, "no wrap");
+        on_event(&mut ui, &app, key(KeyCode::Home));
+        assert_eq!(ui.tree.cursor, 0);
+        on_event(&mut ui, &app, ch('j'));
+        on_event(&mut ui, &app, ch('l'));
+        assert_eq!(visible(&ui).len(), 5, "vi keys work too");
+    }
+
+    #[test]
+    fn left_on_a_site_goes_to_its_folder() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        on_event(&mut ui, &app, key(KeyCode::Down)); // Work
+        on_event(&mut ui, &app, key(KeyCode::Right));
+        on_event(&mut ui, &app, key(KeyCode::Down)); // prod-web
+        assert_eq!(ui.tree.cursor, 2);
+        on_event(&mut ui, &app, key(KeyCode::Left));
+        assert_eq!(ui.tree.cursor, 1);
+    }
+
+    #[test]
+    fn enter_on_a_site_connects_x_disconnects_and_d_duplicates() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        ui.tree.expanded = app.servers.folders().iter().map(|f| f.id).collect();
+        // rows: Personal, blog, Work, prod-web, staging, home-nas
+        ui.tree.cursor = 3;
+        let id = crate::test_support::site_id(&app.servers, "prod-web");
+        assert_eq!(
+            commands(&on_event(&mut ui, &app, key(KeyCode::Enter))),
+            [format!("Connect({id:?})")]
+        );
+        assert_eq!(commands(&on_event(&mut ui, &app, ch('x'))), ["Disconnect"]);
+        assert_eq!(
+            commands(&on_event(&mut ui, &app, ch('D'))),
+            [format!("Tree(Duplicate {{ site: {id:?} }})")]
+        );
+        ui.tree.cursor = 2; // a folder: nothing to duplicate
+        assert!(on_event(&mut ui, &app, ch('D')).is_empty());
+    }
+
+    #[test]
+    fn a_new_connection_moves_the_focus_from_the_tree_to_the_remote_pane() {
+        let mut app = tree_app();
+        let mut ui = tree_ui(&app);
+        let id = crate::test_support::site_id(&app.servers, "prod-web");
+        app.session = SessionState::Connecting {
+            site: id,
+            step: ConnectStep::Connecting,
+        };
+        sync(&mut ui, &app);
+        assert_eq!(ui.focus, Focus::Tree, "still connecting");
+        let connected = connected_app();
+        app.remote = connected.remote.clone();
+        app.session = SessionState::Connected {
+            site: id,
+            info: SessionInfo {
+                protocol: Protocol::Sftp,
+                banner: None,
+                tls: None,
+                home: RemotePath::root(),
+            },
+        };
+        sync(&mut ui, &app);
+        assert_eq!(ui.focus, Focus::Remote);
+        // it does not keep stealing the focus afterwards
+        ui.focus = Focus::Tree;
+        sync(&mut ui, &app);
+        assert_eq!(ui.focus, Focus::Tree);
+    }
+
+    #[test]
+    fn deleting_a_folder_elsewhere_prunes_the_expansion_and_clamps_the_cursor() {
+        let app = tree_app();
+        let mut ui = tree_ui(&app);
+        ui.tree.expanded = app.servers.folders().iter().map(|f| f.id).collect();
+        ui.tree.cursor = 5;
+        let mut smaller = app.clone();
+        smaller.servers = std::sync::Arc::new(filecargo_app_core::prelude::ServerTree::default());
+        sync(&mut ui, &smaller);
+        assert!(ui.tree.expanded.is_empty());
+        assert_eq!(ui.tree.cursor, 0);
     }
 
     #[test]
