@@ -3,6 +3,7 @@
 mod app;
 mod command;
 mod logging;
+mod ops;
 mod pane;
 mod prompt;
 mod session;

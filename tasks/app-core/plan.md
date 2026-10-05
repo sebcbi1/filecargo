@@ -44,7 +44,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 - [x] T4: Prompt queue, `Prompter` impl, `Answer` routing, stale-id handling (M)
 - [x] T5: Local pane: listing, navigation, sort (natural, dirs first), hidden filter, generation race (M)
 - [x] T6: Connect flow via `SessionFactory`, `SessionState` steps, remote pane, auto-reconnect once (M)
-- [ ] T7: Remote ops: mkdir, rename, delete with confirm (recursive), chmod (S)
+- [x] T7: Remote ops: mkdir, rename, delete with confirm (recursive), chmod (S)
 ### Checkpoint B: AC3, AC4, AC5, AC8, AC9 green
 ### Phase 3: Transfers and terminal
 - [ ] T8: Queue wiring: `Connector` adapter over `SessionFactory`, `Upload`/`Download`, conflict prompts, queue commands, pane refresh debounce, snapshot rate (M)
@@ -109,3 +109,8 @@ _Appended per task during implementation._
 - **Lost connection** (a remote listing fails with a retryable `FsError`): the session becomes `Failed`, the pane stays, and the **next remote command** (`Navigate` / `Up` / `Refresh`) reconnects once and then replays that command (`after_connect`). If that reconnect fails nothing retries automatically: the next command only raises a "Not connected" notice.
 - Remote pane: same discipline as the local one (`remote_seq`, stale results dropped, old entries kept on error, `generation` bumps), paths normalised with `RemotePath::parse` (`..` above the root is an error shown in the pane), `~` = the server's home, `SetSort` re-sorts in hand.
 - Test harness: `TestFactory` serves a directory as a "server" (optional password asked through the prompter, `remember` honoured, `fail_next`, per-connection kill switch, connect/close counters). 11 tests: states, remote_dir and home fallback, second site closes the first, password prompt + authenticating step, cancel (no keychain write, no popup), remember, message-vs-quiet failures, reconnect once, no automatic second retry, navigation/up/errors/sort, no-session notice.
+
+### T7 Remote file operations (done) → Checkpoint B reached (AC3–5, 8, 9)
+- `ops.rs`: `Mkdir`, `Rename`, `Delete`, `Chmod` act on **names of the remote pane's current directory**; a name must be one plain path component (`valid_name`), unknown names are ignored, an empty selection does nothing. Each runs in a spawned task and reports `Msg::OpDone`; success refreshes the pane, failure raises an error `Notice` ("Could not create the folder "sub": already exists: ...") plus a `warn` log line, never touches the pane's contents (it is refreshed anyway, since a partial failure may have changed the server), and a retryable error also marks the session lost (reconnect on the next command).
+- `Delete` asks `ConfirmDelete { pane, names, recursive }` first when `settings.ui.confirm_delete`; `recursive` is true when any selected entry is a directory. App-raised prompts keep their follow-up in `PromptAction` (`Core.actions`); only `Confirm(true)` runs it, anything else drops it. Directories are removed with `remove_all`, files and symlinks with `remove_file`.
+- 7 tests (mkdir/rename + refresh, decline deletes nothing, confirm deletes a directory with its contents, no-confirm setting, unknown names, chmod 0o600 on both files, error notices incl. invalid names).

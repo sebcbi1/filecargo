@@ -11,6 +11,11 @@ use crate::app::{Core, Msg};
 use crate::state::{PromptAnswer, PromptId, PromptKind};
 
 /// A request from a background task: show `kind`, send the answer back on `reply`.
+/// What a confirmed prompt does, for prompts the app raises itself (not for background tasks).
+pub(crate) enum PromptAction {
+    Delete { names: Vec<String> },
+}
+
 pub(crate) struct PromptRequest {
     pub kind: PromptKind,
     pub reply: oneshot::Sender<PromptAnswer>,
@@ -72,6 +77,14 @@ impl Core {
             return;
         }
         self.prompts.pop_front();
+        if let Some(action) = self.actions.remove(&id) {
+            match (action, &answer) {
+                (PromptAction::Delete { names }, PromptAnswer::Confirm(true)) => {
+                    self.run_delete(names)
+                }
+                (PromptAction::Delete { .. }, _) => {}
+            }
+        }
         if let Some(reply) = self.replies.remove(&id) {
             let _ = reply.send(answer);
         }

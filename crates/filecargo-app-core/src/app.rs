@@ -16,8 +16,9 @@ use tokio::time::Instant;
 
 use crate::command::Command;
 use crate::logging::LogBuffer;
+use crate::ops::OpDone;
 use crate::pane::LocalListing;
-use crate::prompt::{ActorPrompter, PromptRequest};
+use crate::prompt::{ActorPrompter, PromptAction, PromptRequest};
 use crate::session::{Connected, Live, RemoteListing, SessionFactory, default_factory};
 use crate::state::{
     AppState, ConnectStep, Level, Notice, NoticeId, Pane, PaneId, Prompt, PromptAnswer, PromptId,
@@ -125,6 +126,7 @@ impl App {
             last_publish: Instant::now(),
             prompts: VecDeque::new(),
             replies: HashMap::new(),
+            actions: HashMap::new(),
             local_seq: 0,
             ctx,
             live: None,
@@ -184,6 +186,7 @@ pub(crate) enum Msg {
     /// A local directory listing finished.
     LocalListed(LocalListing),
     RemoteListed(RemoteListing),
+    OpDone(OpDone),
     /// The connect task found out how far it got.
     ConnectStep {
         epoch: u64,
@@ -288,6 +291,8 @@ pub(crate) struct Core {
     pub(crate) local_seq: u64,
     /// Where the answer to a prompt goes, for prompts that came from a background task.
     pub(crate) replies: HashMap<PromptId, oneshot::Sender<PromptAnswer>>,
+    /// What to do when a prompt the app raised itself is confirmed.
+    pub(crate) actions: HashMap<PromptId, PromptAction>,
     next_prompt: u64,
     next_notice: u64,
 }
@@ -309,6 +314,7 @@ impl Core {
                     Some(Msg::Prompt(request)) => self.request_prompt(request),
                     Some(Msg::LocalListed(listing)) => self.on_local_listed(listing),
                     Some(Msg::RemoteListed(listing)) => self.on_remote_listed(listing),
+                    Some(Msg::OpDone(done)) => self.on_op_done(done),
                     Some(Msg::Connected(connected)) => self.on_connected(connected),
                     Some(Msg::ConnectStep { epoch, step }) => self.on_connect_step(epoch, step),
                     Some(Msg::Shutdown(ack)) => {
@@ -400,6 +406,10 @@ impl Core {
                 pane: PaneId::Local,
                 path,
             } => self.navigate_local(&path),
+            command @ (Command::Mkdir { .. }
+            | Command::Rename { .. }
+            | Command::Delete { .. }
+            | Command::Chmod { .. }) => self.remote_operation(command),
             Command::Connect(site) => self.connect(site, None),
             Command::Disconnect => self.disconnect(),
             Command::SetSort {
