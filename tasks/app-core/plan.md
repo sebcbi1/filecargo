@@ -41,7 +41,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 - [x] T3: Tree commands, `ImportFileZilla` (→ `Message` with the report), `SetSitePassword` (S)
 ### Checkpoint A: AC1, AC2 green; snapshot API reviewed (UI authors depend on it)
 ### Phase 2: Browsing
-- [ ] T4: Prompt queue, `Prompter` impl, `Answer` routing, stale-id handling (M)
+- [x] T4: Prompt queue, `Prompter` impl, `Answer` routing, stale-id handling (M)
 - [ ] T5: Local pane: listing, navigation, sort (natural, dirs first), hidden filter, generation race (M)
 - [ ] T6: Connect flow via `SessionFactory`, `SessionState` steps, remote pane, auto-reconnect once (M)
 - [ ] T7: Remote ops: mkdir, rename, delete with confirm (recursive), chmod (S)
@@ -90,3 +90,9 @@ _Appended per task during implementation._
 - The `ConfigStore` is synchronous and takes a cross-process lock per write; the actor calls it directly (a few KB of TOML).
 - With the fixture: **6 imported, 1 skipped**, six sites in the tree. 5 tests.
 - Review note for the UI authors (Checkpoint A): the state/command vocabulary is in `state.rs` / `command.rs`; `Pane.entries` excludes `..`; prompts are a FIFO (the answer path arrives with T4, until then a `Message` simply stays).
+
+### T4 Prompts (done)
+- `prompt.rs`: `ActorPrompter` implements `remote_fs::Prompter` by sending `Msg::Prompt(PromptRequest { kind, reply })` to the actor and awaiting the oneshot; `Core::request_prompt` queues it (FIFO) and remembers the reply channel; `Command::Answer` is accepted **only for the prompt that is showing (the front of the queue)** — unknown or stale ids (including an id answered twice) are ignored. A wrong kind of answer is a refusal (`None` for credentials, `Reject` for trust); a prompt still pending at shutdown resolves as cancelled because its reply channel is dropped.
+- New public `AppHandle::prompter()` (not in the spec sketch): the prompter every session uses, for embedders and tests that open sessions themselves.
+- Lesson for UI authors and tests: a snapshot can lag one publish behind an `Answer`, so after answering, wait for a prompt with a **different id** instead of "any prompt" (the first version of the test answered a stale prompt and hung; tests now join tasks with a 5 s timeout via `Fixture::join`).
+- 5 tests: two concurrent requests shown one at a time in order, cancel → `None`, wrong answer kind → refusal, unknown/stale ids ignored, messages dismissed, shutdown with a pending prompt.

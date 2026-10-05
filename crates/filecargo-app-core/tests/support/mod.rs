@@ -66,3 +66,26 @@ impl Drop for Fixture {
         self.app.clone().shutdown(Duration::from_secs(2));
     }
 }
+
+impl Fixture {
+    /// Waits (up to 5 s) for a spawned task and returns its result.
+    pub fn join<T: Send + 'static>(&self, task: tokio::task::JoinHandle<T>) -> T {
+        self.app.runtime().block_on(async {
+            tokio::time::timeout(Duration::from_secs(5), task)
+                .await
+                .expect("the task did not finish within 5 s")
+                .unwrap()
+        })
+    }
+
+    /// Waits for a prompt other than `after` to be showing.
+    pub fn wait_for_prompt_after(
+        &self,
+        after: Option<filecargo_app_core::PromptId>,
+    ) -> filecargo_app_core::Prompt {
+        let state = self.wait_for("a new prompt", |s| {
+            s.prompt.as_ref().is_some_and(|p| Some(p.id) != after)
+        });
+        state.prompt.clone().unwrap()
+    }
+}

@@ -1,7 +1,7 @@
 //! The actor that owns the application: one tokio task, one message queue, one published
 //! snapshot.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -13,10 +13,11 @@ use tokio::time::Instant;
 
 use crate::command::Command;
 use crate::logging::LogBuffer;
+use crate::prompt::{ActorPrompter, PromptRequest};
 use crate::session::{SessionFactory, default_factory};
 use crate::state::{
-    AppState, Level, Notice, NoticeId, Pane, Prompt, PromptId, PromptKind, SessionState,
-    StartError, TerminalState,
+    AppState, Level, Notice, NoticeId, Pane, Prompt, PromptAnswer, PromptId, PromptKind,
+    SessionState, StartError, TerminalState,
 };
 
 /// Published snapshots are coalesced to at most this many per second.
@@ -111,6 +112,7 @@ impl App {
             dirty: false,
             last_publish: Instant::now(),
             prompts: VecDeque::new(),
+            replies: HashMap::new(),
             next_prompt: 0,
             next_notice: 0,
         };
@@ -157,6 +159,8 @@ fn start_dir(settings: &Settings) -> PathBuf {
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Msg {
     Command(Command),
+    /// A prompt requested by a background task (a session asking for a password, ...).
+    Prompt(PromptRequest),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -182,6 +186,14 @@ impl AppHandle {
     /// The latest snapshot, and a way to wait for the next one.
     pub fn state(&self) -> watch::Receiver<Arc<AppState>> {
         self.inner.snapshots.clone()
+    }
+
+    /// The prompter every session uses: prompts show up in `AppState::prompt`. Exposed for
+    /// embedders and tests that open sessions themselves.
+    pub fn prompter(&self) -> Arc<dyn filecargo_remote_fs::Prompter> {
+        Arc::new(ActorPrompter {
+            messages: self.inner.messages.clone(),
+        })
     }
 
     /// The shared log ring buffer.
@@ -232,6 +244,8 @@ pub(crate) struct Core {
     dirty: bool,
     last_publish: Instant,
     pub(crate) prompts: VecDeque<Prompt>,
+    /// Where the answer to a prompt goes, for prompts that came from a background task.
+    pub(crate) replies: HashMap<PromptId, oneshot::Sender<PromptAnswer>>,
     next_prompt: u64,
     next_notice: u64,
 }
@@ -248,6 +262,7 @@ impl Core {
             tokio::select! {
                 message = messages.recv() => match message {
                     Some(Msg::Command(command)) => self.handle(command),
+                    Some(Msg::Prompt(request)) => self.request_prompt(request),
                     Some(Msg::Shutdown(ack)) => {
                         self.shutdown().await;
                         self.publish_now();
@@ -332,6 +347,7 @@ impl Core {
             }
             Command::SetSitePassword { site, secret } => self.set_site_password(site, &secret),
             Command::UpdateSettings(settings) => self.update_settings(settings),
+            Command::Answer { id, answer } => self.answer_prompt(id, answer),
             Command::DismissNotice(id) => {
                 self.state.notices.retain(|n| n.id != id);
                 self.changed();
