@@ -9,6 +9,7 @@ pub mod model;
 pub mod notices;
 pub mod pane;
 pub mod prompts;
+pub mod terminal;
 pub mod toolbar;
 pub mod tree;
 pub mod workspace;

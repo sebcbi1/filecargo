@@ -7,15 +7,17 @@ pub mod queue;
 use std::sync::Arc;
 
 use filecargo_app_core::prelude::*;
+use gpui_kit::Focusable as _;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::table::{DataTable, TableState};
-use gpui_kit::component::{ActiveTheme as _, v_flex};
+use gpui_kit::component::v_flex;
 use gpui_kit::{
     AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement as _,
     Render, Styled as _, Subscription, Window, div,
 };
 
 use crate::model::AppModel;
+use crate::terminal::TerminalView;
 use log::LogView;
 use queue::{ListKind, QueueDelegate};
 
@@ -49,6 +51,7 @@ pub struct BottomPanel {
     pub completed: Entity<TableState<QueueDelegate>>,
     pub failed: Entity<TableState<QueueDelegate>>,
     pub log: Entity<LogView>,
+    pub terminal: Entity<TerminalView>,
     shown: Option<Arc<QueueSnapshot>>,
     _subscription: Subscription,
 }
@@ -65,6 +68,7 @@ impl BottomPanel {
         let failed = table(ListKind::Failed, window, cx);
         let log_buffer = handle.log();
         let log = cx.new(|_| LogView::new(log_buffer));
+        let terminal = cx.new(|cx| TerminalView::new(model.clone(), cx));
         let _subscription = cx.observe(&model, |this, _, cx| this.sync(cx));
         let mut panel = Self {
             model,
@@ -73,6 +77,7 @@ impl BottomPanel {
             completed,
             failed,
             log,
+            terminal,
             shown: None,
             _subscription,
         };
@@ -143,7 +148,13 @@ impl Render for BottomPanel {
                 Tab::new().label("Log"),
                 Tab::new().label("Terminal"),
             ])
-            .on_click(cx.listener(|this, index: &usize, _, cx| this.select_tab(*index, cx)));
+            .on_click(cx.listener(|this, index: &usize, window, cx| {
+                this.select_tab(*index, cx);
+                if *index == 4 {
+                    let focus = this.terminal.read(cx).focus_handle(cx);
+                    focus.focus(window, cx);
+                }
+            }));
         let body = match self.tab {
             0 => DataTable::new(&self.queue).stripe(true).into_any_element(),
             1 => DataTable::new(&self.completed)
@@ -151,11 +162,7 @@ impl Render for BottomPanel {
                 .into_any_element(),
             2 => DataTable::new(&self.failed).stripe(true).into_any_element(),
             3 => self.log.clone().into_any_element(),
-            _ => div()
-                .p_2()
-                .text_color(cx.theme().muted_foreground)
-                .child("Terminal")
-                .into_any_element(),
+            _ => self.terminal.clone().into_any_element(),
         };
         v_flex()
             .id("bottom-panel")

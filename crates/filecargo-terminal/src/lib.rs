@@ -5,4 +5,4 @@ mod keys;
 
 pub use handle::{TermSize, TermStatus, TerminalHandle, paste_bytes, spawn};
 pub use keys::{Key, Modes, Mods, encode};
-pub use vt100::Screen;
+pub use vt100::{Cell, Color, Parser, Screen};

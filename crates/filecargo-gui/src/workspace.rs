@@ -268,16 +268,19 @@ impl Render for Workspace {
 pub fn bind_keys(cx: &mut gpui_kit::App) {
     use crate::bottom::RemoveItem;
     use crate::pane::{OpenRow, ParentDir, RefreshPane, SelectAllRows, TransferSelection};
+    use crate::terminal::{SendBackTab, SendTab};
     use crate::tree::{DeleteSelected, EditSelected, RenameSelected};
     use gpui_kit::KeyBinding;
     cx.bind_keys([
-        KeyBinding::new("secondary-q", Quit, None),
-        KeyBinding::new("secondary-,", OpenSettings, None),
+        KeyBinding::new("secondary-q", Quit, Some("!Terminal")),
+        KeyBinding::new("secondary-,", OpenSettings, Some("!Terminal")),
         KeyBinding::new("enter", OpenRow, Some("FilePane")),
         KeyBinding::new("backspace", ParentDir, Some("FilePane")),
         KeyBinding::new("secondary-a", SelectAllRows, Some("FilePane")),
         KeyBinding::new("secondary-r", RefreshPane, Some("FilePane")),
         KeyBinding::new("f5", TransferSelection, Some("FilePane")),
+        KeyBinding::new("tab", SendTab, Some("Terminal")),
+        KeyBinding::new("shift-tab", SendBackTab, Some("Terminal")),
         KeyBinding::new("delete", RemoveItem, Some("Queue")),
         KeyBinding::new("f2", RenameSelected, Some("ServerTree")),
         KeyBinding::new("delete", DeleteSelected, Some("ServerTree")),
