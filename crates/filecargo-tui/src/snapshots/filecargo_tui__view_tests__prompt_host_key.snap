@@ -1,6 +1,6 @@
 ---
 source: crates/filecargo-tui/src/view_tests.rs
-expression: "draw(&ui, &app)"
+expression: prompt_screen(host_key)
 ---
 "┌ Servers ─────────┐┌ Local ~/projects ────────────────────┐┌ Remote (not connected) ──────────────┐"
 "│No servers yet. Pr││  Name              Size   Modified   ││  Name              Size   Modified   │"
@@ -13,13 +13,13 @@ expression: "draw(&ui, &app)"
 "│                  ││                                      ││                                      │"
 "│                  ││                                      ││                                      │"
 "│                  ││                                      ││                                      │"
-"│                  ││                                      ││                                      │"
-"│                  ││ ┌ Rename ──────────────────────────────────────────────┐                     │"
-"│                  ││ │New name: index.php                                   │                     │"
-"│                  ││ │                                                      │                     │"
-"│                  ││ │Tab next · Enter OK · Esc cancel                      │                     │"
-"│                  ││ │                                                      │                     │"
-"│                  ││ └──────────────────────────────────────────────────────┘                     │"
+"│             ┌ Unknown host key ────────────────────────────────────────────────────┐             │"
+"│             │The authenticity of example.org:22 cannot be established.             │             │"
+"│             │ssh-ed25519 key fingerprint:                                          │             │"
+"│             │SHA256:uV3ZkP0xvQhmY1d1fGkTt6l4mqWb8rJwq0h5cG9nZ2A                    │             │"
+"│             │                                                                      │             │"
+"│             │y trust once · a trust always · n / Esc reject                        │             │"
+"│             └──────────────────────────────────────────────────────────────────────┘             │"
 "│                  ││                                      ││                                      │"
 "│                  ││                                      ││                                      │"
 "└──────────────────┘└──────────────────────────────────────┘└──────────────────────────────────────┘"

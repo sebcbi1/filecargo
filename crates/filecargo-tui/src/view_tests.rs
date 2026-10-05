@@ -244,3 +244,96 @@ fn an_input_dialog_shows_the_cursor_in_the_text() {
     );
     insta::assert_snapshot!(draw(&ui, &app));
 }
+
+fn prompt_screen(kind: filecargo_app_core::prelude::PromptKind) -> String {
+    use filecargo_app_core::prelude::{Prompt, PromptId};
+    let mut app = connected_app();
+    app.prompt = Some(Prompt {
+        id: PromptId(1),
+        kind,
+    });
+    let ui = synced(100, 30, &app);
+    draw(&ui, &app)
+}
+
+#[test]
+fn prompts_of_every_kind_are_drawn() {
+    use filecargo_app_core::prelude::*;
+    let host_key = PromptKind::HostKey(HostKeyPrompt {
+        host: "example.org".into(),
+        port: 22,
+        algorithm: "ssh-ed25519".into(),
+        fingerprint: "SHA256:uV3ZkP0xvQhmY1d1fGkTt6l4mqWb8rJwq0h5cG9nZ2A".into(),
+    });
+    insta::assert_snapshot!("prompt_host_key", prompt_screen(host_key));
+    let cert = PromptKind::Certificate(CertificatePrompt {
+        host: "ftp.example.org".into(),
+        port: 21,
+        problem: CertificateProblem::SelfSigned,
+        subject: "CN=ftp.example.org".into(),
+        issuer: "CN=ftp.example.org".into(),
+        not_after: "2027-01-01 00:00:00 UTC".into(),
+        sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
+    });
+    insta::assert_snapshot!("prompt_certificate", prompt_screen(cert));
+    let password = PromptKind::Credential(CredentialPrompt::Password {
+        site: "prod-web".into(),
+        user: "deploy".into(),
+        retry: true,
+    });
+    insta::assert_snapshot!("prompt_password", prompt_screen(password));
+    let kbd = PromptKind::Credential(CredentialPrompt::KeyboardInteractive {
+        site: "prod-web".into(),
+        name: "Two-factor".into(),
+        instructions: "Enter the code from your authenticator.".into(),
+        prompts: vec![("Verification code: ".into(), true)],
+    });
+    insta::assert_snapshot!("prompt_keyboard_interactive", prompt_screen(kbd));
+    let conflict = PromptKind::Conflict {
+        transfer: TransferId(1),
+        conflict: ConflictInfo {
+            source: crate::test_support::entry("index.php", false, 4400, 2),
+            target: crate::test_support::entry("index.php", false, 3900, 40),
+        },
+    };
+    insta::assert_snapshot!("prompt_conflict", prompt_screen(conflict));
+    let delete = PromptKind::ConfirmDelete {
+        pane: PaneId::Remote,
+        names: vec!["html".into(), "index.php".into()],
+        recursive: true,
+    };
+    insta::assert_snapshot!("prompt_delete", prompt_screen(delete));
+    let quit = PromptKind::ConfirmQuit {
+        active_transfers: 3,
+    };
+    insta::assert_snapshot!("prompt_quit", prompt_screen(quit));
+    let message = PromptKind::Message {
+        level: Level::Warning,
+        title: "FileZilla import".into(),
+        body: "Imported 6 sites into \"FileZilla import 2026-10-05\".\nSkipped 1: unsupported protocol.".into(),
+    };
+    insta::assert_snapshot!("prompt_message", prompt_screen(message));
+}
+
+#[test]
+fn chmod_go_to_and_import_dialogs_are_drawn() {
+    use crate::dialog::{Dialog, InputDialog, InputPurpose};
+    use crate::dialog_util::{ChmodDialog, ImportDialog};
+    use filecargo_app_core::prelude::PaneId;
+    let app = connected_app();
+    let chmod = Dialog::Chmod(ChmodDialog::new(vec!["index.php".into()], 0o644));
+    insta::assert_snapshot!("chmod", draw(&dialog_ui(&app, chmod), &app));
+    let goto = Dialog::Input(InputDialog::new(
+        "Go to path",
+        "Path",
+        "/var/www",
+        InputPurpose::GoTo {
+            pane: PaneId::Remote,
+        },
+    ));
+    insta::assert_snapshot!("goto", draw(&dialog_ui(&app, goto), &app));
+    let import = Dialog::Import(ImportDialog::new(
+        "/home/me/.config/filezilla/sitemanager.xml",
+    ));
+    insta::assert_snapshot!("import", draw(&dialog_ui(&app, import), &app));
+}

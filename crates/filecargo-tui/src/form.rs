@@ -15,8 +15,8 @@ pub enum FieldKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
-    pub id: &'static str,
-    pub label: &'static str,
+    pub id: String,
+    pub label: String,
     pub kind: FieldKind,
     pub text: String,
     /// Cursor position in `text`, counted in characters.
@@ -28,10 +28,10 @@ pub struct Field {
 }
 
 impl Field {
-    fn base(id: &'static str, label: &'static str, kind: FieldKind) -> Self {
+    fn base(id: &str, label: &str, kind: FieldKind) -> Self {
         Self {
-            id,
-            label,
+            id: id.to_owned(),
+            label: label.to_owned(),
             kind,
             text: String::new(),
             cursor: 0,
@@ -41,17 +41,17 @@ impl Field {
         }
     }
 
-    pub fn text(id: &'static str, label: &'static str, value: &str) -> Self {
+    pub fn text(id: &str, label: &str, value: &str) -> Self {
         let mut field = Self::base(id, label, FieldKind::Text);
         field.set_text(value);
         field
     }
 
-    pub fn masked(id: &'static str, label: &'static str) -> Self {
+    pub fn masked(id: &str, label: &str) -> Self {
         Self::base(id, label, FieldKind::Masked)
     }
 
-    pub fn checkbox(id: &'static str, label: &'static str, checked: bool) -> Self {
+    pub fn checkbox(id: &str, label: &str, checked: bool) -> Self {
         let mut field = Self::base(id, label, FieldKind::Checkbox);
         field.checked = checked;
         field

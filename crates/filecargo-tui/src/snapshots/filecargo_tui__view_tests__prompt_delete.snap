@@ -1,6 +1,6 @@
 ---
 source: crates/filecargo-tui/src/view_tests.rs
-expression: "draw(&ui, &app)"
+expression: prompt_screen(delete)
 ---
 "┌ Servers ─────────┐┌ Local ~/projects ────────────────────┐┌ Remote (not connected) ──────────────┐"
 "│No servers yet. Pr││  Name              Size   Modified   ││  Name              Size   Modified   │"
@@ -14,12 +14,12 @@ expression: "draw(&ui, &app)"
 "│                  ││                                      ││                                      │"
 "│                  ││                                      ││                                      │"
 "│                  ││                                      ││                                      │"
-"│                  ││ ┌ Rename ──────────────────────────────────────────────┐                     │"
-"│                  ││ │New name: index.php                                   │                     │"
-"│                  ││ │                                                      │                     │"
-"│                  ││ │Tab next · Enter OK · Esc cancel                      │                     │"
-"│                  ││ │                                                      │                     │"
-"│                  ││ └──────────────────────────────────────────────────────┘                     │"
+"│             ┌ Delete ──────────────────────────────────────────────────────────────┐             │"
+"│             │Delete 2 items?                                                       │             │"
+"│             │Folders are deleted with everything in them.                          │             │"
+"│             │                                                                      │             │"
+"│             │y / Enter delete · n / Esc cancel                                     │             │"
+"│             └──────────────────────────────────────────────────────────────────────┘             │"
 "│                  ││                                      ││                                      │"
 "│                  ││                                      ││                                      │"
 "└──────────────────┘└──────────────────────────────────────┘└──────────────────────────────────────┘"

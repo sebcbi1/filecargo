@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 use crate::dialog::Dialog;
+use crate::prompt_ui::PromptSlot;
 use crate::tree::TreeUi;
 
 /// The area keys go to.
@@ -41,6 +42,8 @@ pub struct UiState {
     pub tree: TreeUi,
     /// The modal dialog on top of everything, if any; it takes every key.
     pub dialog: Option<Dialog>,
+    /// The app's prompt on show (it sits above any dialog).
+    pub prompt: Option<PromptSlot>,
     pub local: PaneUi,
     pub remote: PaneUi,
     /// Whether the last snapshot had a live session (to move the focus when one appears).
@@ -63,6 +66,7 @@ impl UiState {
             maximize_bottom: false,
             tree: TreeUi::default(),
             dialog: None,
+            prompt: None,
             local: PaneUi::default(),
             remote: PaneUi::default(),
             was_connected: false,

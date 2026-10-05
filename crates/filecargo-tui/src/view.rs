@@ -72,6 +72,12 @@ pub fn render(frame: &mut Frame, ui: &UiState, app: &AppState) {
     if let Some(dialog) = &ui.dialog {
         crate::dialog_view::render(frame, area, dialog, &look);
     }
+    if let (Some(prompt), Some(slot)) = (&app.prompt, &ui.prompt)
+        && !slot.answered
+        && prompt.id == slot.id
+    {
+        crate::prompt_view::render(frame, area, &prompt.kind, &slot.ui, ui, &look);
+    }
 }
 
 fn placeholder(frame: &mut Frame, area: Rect, title: &str, focused: bool, look: &Look) {

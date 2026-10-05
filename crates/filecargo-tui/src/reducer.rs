@@ -7,9 +7,11 @@ use ratatui::layout::Rect;
 use crate::dialog::{
     ConfirmDialog, Dialog, InputDialog, InputPurpose, MovePicker, Outcome, SiteEditor,
 };
+use crate::dialog_util::{ChmodDialog, ImportDialog};
 use crate::keymap::{self, Action, Context};
 use crate::layout;
 use crate::pane::{PaneView, pane_view};
+use crate::prompt_ui::{PromptSlot, PromptUi};
 use crate::tree::{self, RowKind};
 use crate::ui_state::{Focus, PaneUi, UiState};
 
@@ -54,6 +56,7 @@ fn scroll_to_cursor(pane: &mut PaneUi, rows: usize) {
 /// survive a refresh of the same directory but reset when another directory is shown.
 pub fn sync(ui: &mut UiState, app: &AppState) {
     sync_tree(ui, app);
+    sync_prompt(ui, app);
     for focus in [Focus::Local, Focus::Remote] {
         let rows = viewport(ui, focus);
         let Some(view) = pane_view(app, focus) else {
@@ -302,6 +305,27 @@ fn files_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command
                 vec![Command::Delete { names }]
             }
         }
+        Action::GoTo => {
+            ui.dialog = Some(Dialog::Input(InputDialog::new(
+                "Go to path",
+                "Path",
+                &view.path,
+                InputPurpose::GoTo { pane: view.id },
+            )));
+            Vec::new()
+        }
+        Action::Chmod if focus == Focus::Remote => {
+            let pane = ui.pane(focus).cloned().unwrap_or_default();
+            let names = target_names(&pane, &view);
+            let mode = view
+                .entry(pane.cursor)
+                .and_then(|e| e.permissions)
+                .unwrap_or(0o644);
+            if !names.is_empty() {
+                ui.dialog = Some(Dialog::Chmod(ChmodDialog::new(names, mode)));
+            }
+            Vec::new()
+        }
         Action::MakeDir if focus == Focus::Remote => {
             ui.dialog = Some(Dialog::Input(InputDialog::new(
                 "New remote folder",
@@ -411,6 +435,15 @@ fn tree_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command>
             None => {}
         },
         Action::Disconnect => commands.push(Command::Disconnect),
+        Action::ImportFileZilla => {
+            let default = ui
+                .home
+                .as_ref()
+                .map(|home| home.join(".config/filezilla/sitemanager.xml"))
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            ui.dialog = Some(Dialog::Import(ImportDialog::new(&default)));
+        }
         Action::NewSite => {
             ui.dialog = Some(Dialog::Site(Box::new(SiteEditor::new_site(target_folder(
                 app, &current,
@@ -512,6 +545,41 @@ fn dialog_key(ui: &mut UiState, key: KeyEvent) -> Vec<Command> {
     }
 }
 
+/// One UI slot per prompt the app shows; a new prompt id starts a fresh one.
+fn sync_prompt(ui: &mut UiState, app: &AppState) {
+    match (&app.prompt, &ui.prompt) {
+        (None, _) => ui.prompt = None,
+        (Some(prompt), Some(slot)) if slot.id == prompt.id => {}
+        (Some(prompt), _) => {
+            ui.prompt = Some(PromptSlot {
+                id: prompt.id,
+                ui: PromptUi::for_kind(&prompt.kind),
+                answered: false,
+            });
+        }
+    }
+}
+
+/// Keys while the app's prompt shows: only the prompt hears them.
+fn prompt_key(ui: &mut UiState, app: &AppState, key: KeyEvent) -> Vec<Command> {
+    let (Some(prompt), Some(slot)) = (&app.prompt, ui.prompt.as_mut()) else {
+        return Vec::new();
+    };
+    if slot.answered || slot.id != prompt.id {
+        return Vec::new();
+    }
+    match slot.ui.on_key(&prompt.kind, key) {
+        Some(answer) => {
+            slot.answered = true;
+            vec![Command::Answer {
+                id: prompt.id,
+                answer,
+            }]
+        }
+        None => Vec::new(),
+    }
+}
+
 pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> {
     match event {
         Event::Resize(width, height) => {
@@ -520,6 +588,13 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
             Vec::new()
         }
         Event::Key(key) => {
+            if ui
+                .prompt
+                .as_ref()
+                .is_some_and(|p| app.prompt.as_ref().is_some_and(|a| a.id == p.id))
+            {
+                return prompt_key(ui, app, key);
+            }
             if ui.dialog.is_some() {
                 return dialog_key(ui, key);
             }
@@ -569,6 +644,10 @@ pub fn on_event(ui: &mut UiState, app: &AppState, event: Event) -> Vec<Command> 
             }
         }
         Event::Paste(text) => {
+            if let Some(slot) = ui.prompt.as_mut().filter(|s| !s.answered) {
+                slot.ui.paste(&text);
+                return Vec::new();
+            }
             if let Some(dialog) = ui.dialog.as_mut() {
                 dialog.paste(&text);
             }
@@ -700,7 +779,6 @@ mod tests {
         );
         assert_eq!(ui.local.cursor, 3);
         on_event(&mut ui, &app, ch(' ')); // README.md
-        on_event(&mut ui, &app, ch('g')); // `g` is go-to, not a selection key
         assert_eq!(ui.local.selected.len(), 3);
         on_event(&mut ui, &app, ch('*'));
         assert_eq!(
@@ -1311,5 +1389,176 @@ mod dialog_tests {
             panic!()
         };
         assert_eq!(editor.form.text_of("name"), "pasted name");
+    }
+}
+
+#[cfg(test)]
+mod prompt_tests {
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+    use super::*;
+    use crate::test_support::{app, connected_app, synced};
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn ch(c: char) -> Event {
+        key(KeyCode::Char(c))
+    }
+
+    fn with_prompt(mut app: AppState, id: u64, kind: PromptKind) -> AppState {
+        app.prompt = Some(Prompt {
+            id: PromptId(id),
+            kind,
+        });
+        app
+    }
+
+    fn host_key() -> PromptKind {
+        PromptKind::HostKey(HostKeyPrompt {
+            host: "example.org".into(),
+            port: 22,
+            algorithm: "ssh-ed25519".into(),
+            fingerprint: "SHA256:abc".into(),
+        })
+    }
+
+    #[test]
+    fn the_prompt_takes_every_key_and_the_answer_goes_out_once() {
+        let app = with_prompt(app(), 7, host_key());
+        let mut ui = synced(100, 30, &app);
+        // `q` does not quit and `Tab` does not move the focus while a prompt shows
+        assert!(on_event(&mut ui, &app, ch('q')).is_empty());
+        assert!(!ui.quit_requested);
+        let focus = ui.focus;
+        assert!(on_event(&mut ui, &app, key(KeyCode::Tab)).is_empty());
+        assert_eq!(ui.focus, focus);
+
+        let commands = on_event(&mut ui, &app, ch('a'));
+        assert!(
+            matches!(
+                &commands[..],
+                [Command::Answer {
+                    id: PromptId(7),
+                    answer: PromptAnswer::Trust(TrustDecision::TrustAlways)
+                }]
+            ),
+            "{commands:?}"
+        );
+        // the snapshot still carries the prompt: a second key must not answer again
+        assert!(on_event(&mut ui, &app, ch('y')).is_empty());
+        assert!(ui.prompt.as_ref().unwrap().answered);
+    }
+
+    #[test]
+    fn a_new_prompt_id_gets_a_fresh_slot_and_no_prompt_clears_it() {
+        let first = with_prompt(app(), 1, host_key());
+        let mut ui = synced(100, 30, &first);
+        on_event(&mut ui, &first, ch('y'));
+        let second = with_prompt(app(), 2, host_key());
+        sync(&mut ui, &second);
+        assert!(
+            !ui.prompt.as_ref().unwrap().answered,
+            "the next prompt can be answered"
+        );
+        assert_eq!(on_event(&mut ui, &second, ch('n')).len(), 1);
+        sync(&mut ui, &app());
+        assert!(ui.prompt.is_none());
+        // and keys reach the panes again
+        let plain = app();
+        on_event(&mut ui, &plain, ch('j'));
+        assert_eq!(ui.local.cursor, 1);
+    }
+
+    #[test]
+    fn a_prompt_sits_above_an_open_dialog() {
+        let plain = connected_app();
+        let mut ui = synced(100, 30, &plain);
+        ui.focus = Focus::Remote;
+        on_event(&mut ui, &plain, key(KeyCode::F(7)));
+        assert!(ui.dialog.is_some());
+        let app = with_prompt(connected_app(), 3, host_key());
+        sync(&mut ui, &app);
+        let commands = on_event(&mut ui, &app, ch('n'));
+        assert_eq!(commands.len(), 1, "the prompt got the key, not the dialog");
+        assert!(ui.dialog.is_some(), "the dialog waits underneath");
+    }
+
+    #[test]
+    fn pasting_into_a_password_prompt_fills_the_field() {
+        use filecargo_config::ExposeSecret;
+        let kind = PromptKind::Credential(CredentialPrompt::Password {
+            site: "work".into(),
+            user: "me".into(),
+            retry: false,
+        });
+        let app = with_prompt(app(), 4, kind);
+        let mut ui = synced(100, 30, &app);
+        on_event(&mut ui, &app, Event::Paste("s3cret".into()));
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        let [
+            Command::Answer {
+                answer: PromptAnswer::Credential(Some(answer)),
+                ..
+            },
+        ] = &commands[..]
+        else {
+            panic!("{commands:?}")
+        };
+        assert_eq!(answer.values[0].expose_secret(), "s3cret");
+    }
+
+    #[test]
+    fn g_c_and_i_open_the_utility_dialogs() {
+        let app = connected_app();
+        let mut ui = synced(120, 30, &app);
+        ui.focus = Focus::Remote;
+        on_event(&mut ui, &app, ch('g'));
+        let Some(Dialog::Input(input)) = &ui.dialog else {
+            panic!()
+        };
+        assert_eq!(
+            input.form.text_of("value"),
+            "/var/www",
+            "pre-filled with the current path"
+        );
+        for _ in 0.."/var/www".len() {
+            on_event(&mut ui, &app, key(KeyCode::Backspace));
+        }
+        for c in "/etc/nginx".chars() {
+            on_event(&mut ui, &app, ch(c));
+        }
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::Navigate { pane: PaneId::Remote, path }] if path == "/etc/nginx"),
+            "{commands:?}"
+        );
+
+        ui.remote.cursor = 2; // index.php
+        on_event(&mut ui, &app, ch('c'));
+        let Some(Dialog::Chmod(chmod)) = &ui.dialog else {
+            panic!()
+        };
+        assert_eq!(chmod.names, ["index.php"]);
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::Chmod { mode: 0o644, .. }]),
+            "{commands:?}"
+        );
+
+        ui.focus = Focus::Local;
+        on_event(&mut ui, &app, ch('c'));
+        assert!(ui.dialog.is_none(), "chmod is remote-only");
+        on_event(&mut ui, &app, ch('g'));
+        assert!(
+            matches!(ui.dialog, Some(Dialog::Input(_))),
+            "go-to works on the local pane too"
+        );
+        on_event(&mut ui, &app, key(KeyCode::Esc));
+
+        ui.focus = Focus::Tree;
+        on_event(&mut ui, &app, ch('i'));
+        assert!(matches!(ui.dialog, Some(Dialog::Import(_))));
     }
 }

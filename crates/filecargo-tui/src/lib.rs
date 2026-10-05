@@ -2,12 +2,15 @@
 
 pub mod app_loop;
 pub mod dialog;
+pub mod dialog_util;
 pub mod dialog_view;
 pub mod form;
 pub mod guard;
 pub mod keymap;
 pub mod layout;
 mod pane;
+pub mod prompt_ui;
+pub mod prompt_view;
 pub mod reducer;
 #[cfg(test)]
 mod test_support;

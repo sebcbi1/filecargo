@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use filecargo_app_core::prelude::*;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
+use crate::dialog_util::{ChmodDialog, ImportDialog};
 use crate::form::{Field, Form, FormOutcome};
 
 /// What a dialog wants after a key.
@@ -19,10 +20,18 @@ pub enum Outcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputPurpose {
-    NewFolder { parent: Option<FolderId> },
+    NewFolder {
+        parent: Option<FolderId>,
+    },
     RenameNode(NodeId),
     Mkdir,
-    RenameRemote { from: String },
+    RenameRemote {
+        from: String,
+    },
+    /// A path, so it may contain `/`.
+    GoTo {
+        pane: PaneId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,10 +57,15 @@ impl InputDialog {
             FormOutcome::Submit => {
                 let value = self.form.text_of("value").to_owned();
                 if value.is_empty() {
-                    self.form.error = Some("The name cannot be empty.".to_owned());
+                    let what = if matches!(self.purpose, InputPurpose::GoTo { .. }) {
+                        "path"
+                    } else {
+                        "name"
+                    };
+                    self.form.error = Some(format!("The {what} cannot be empty."));
                     return Outcome::Keep;
                 }
-                if value.contains('/') {
+                if value.contains('/') && !matches!(self.purpose, InputPurpose::GoTo { .. }) {
                     self.form.error = Some("The name cannot contain '/'.".to_owned());
                     return Outcome::Keep;
                 }
@@ -65,6 +79,10 @@ impl InputDialog {
                         name: value,
                     }),
                     InputPurpose::Mkdir => Command::Mkdir { name: value },
+                    InputPurpose::GoTo { pane } => Command::Navigate {
+                        pane: *pane,
+                        path: value,
+                    },
                     InputPurpose::RenameRemote { from } => Command::Rename {
                         from: from.clone(),
                         to: value,
@@ -392,6 +410,8 @@ pub enum Dialog {
     Input(InputDialog),
     Confirm(ConfirmDialog),
     Move(MovePicker),
+    Chmod(ChmodDialog),
+    Import(ImportDialog),
 }
 
 impl Dialog {
@@ -401,6 +421,8 @@ impl Dialog {
             Self::Input(input) => input.on_key(key),
             Self::Confirm(confirm) => confirm.on_key(key),
             Self::Move(picker) => picker.on_key(key),
+            Self::Chmod(chmod) => chmod.on_key(key),
+            Self::Import(import) => import.on_key(key),
         }
     }
 
@@ -408,6 +430,8 @@ impl Dialog {
         match self {
             Self::Site(editor) => editor.paste(text),
             Self::Input(input) => input.form.paste(text),
+            Self::Chmod(chmod) => chmod.paste(text),
+            Self::Import(import) => import.form.paste(text),
             Self::Confirm(_) | Self::Move(_) => {}
         }
     }

@@ -10,7 +10,7 @@ use crate::dialog::Dialog;
 use crate::form::{Field, FieldKind, Form};
 use crate::view::Look;
 
-fn centered(area: Rect, width: u16, height: u16) -> Rect {
+pub(crate) fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
     let height = height.min(area.height);
     Rect {
@@ -57,7 +57,7 @@ fn field_line(field: &Field, focused: bool, label_width: usize) -> Line<'static>
     Line::from(spans)
 }
 
-fn render_form(frame: &mut Frame, area: Rect, form: &Form, look: &Look) {
+pub(crate) fn render_form(frame: &mut Frame, area: Rect, form: &Form, look: &Look) {
     let visible: Vec<(usize, &Field)> = form
         .fields
         .iter()
@@ -77,7 +77,7 @@ fn render_form(frame: &mut Frame, area: Rect, form: &Form, look: &Look) {
     match &form.error {
         Some(error) => lines.push(Line::styled(error.clone(), look.tint(Color::Red))),
         None => lines.push(Line::styled(
-            "Tab next · Enter save · Esc cancel",
+            "Tab next · Enter OK · Esc cancel",
             Style::new().add_modifier(Modifier::DIM),
         )),
     }
@@ -98,6 +98,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, dialog: &Dialog, look: &Look
         Dialog::Input(input) => (format!(" {} ", input.title), 56, 6),
         Dialog::Confirm(confirm) => (format!(" {} ", confirm.title), 56, 6),
         Dialog::Move(picker) => (" Move to ".to_owned(), 48, picker.choices.len() as u16 + 4),
+        Dialog::Chmod(chmod) => (
+            format!(" Permissions of {} ", names_label(&chmod.names)),
+            48,
+            chmod.form.fields.len() as u16 + 4,
+        ),
+        Dialog::Import(_) => (" Import from FileZilla ".to_owned(), 72, 7),
     };
     let rect = centered(area, width, height);
     frame.render_widget(Clear, rect);
@@ -110,6 +116,8 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, dialog: &Dialog, look: &Look
     match dialog {
         Dialog::Site(editor) => render_form(frame, inner, &editor.form, look),
         Dialog::Input(input) => render_form(frame, inner, &input.form, look),
+        Dialog::Chmod(chmod) => render_form(frame, inner, &chmod.form, look),
+        Dialog::Import(import) => render_form(frame, inner, &import.form, look),
         Dialog::Confirm(confirm) => {
             let lines = vec![
                 Line::raw(confirm.body.clone()),
@@ -142,5 +150,12 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, dialog: &Dialog, look: &Look
             ));
             frame.render_widget(Paragraph::new(lines), inner);
         }
+    }
+}
+
+fn names_label(names: &[String]) -> String {
+    match names {
+        [one] => one.clone(),
+        many => format!("{} items", many.len()),
     }
 }

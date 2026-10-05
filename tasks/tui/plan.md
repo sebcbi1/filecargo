@@ -33,7 +33,7 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 ### Phase 2: Servers and sessions
 - [x] T3: Server tree (`tui-tree-widget`), tree bindings, connect/disconnect, remote pane (M)
 - [x] T4: Form toolkit + site editor (new/edit) + new folder/rename/move/delete dialogs (M)
-- [ ] T5: Prompt dialogs for every `PromptKind` + chmod, go-to-path, import dialogs (M)
+- [x] T5: Prompt dialogs for every `PromptKind` + chmod, go-to-path, import dialogs (M)
 ### Checkpoint B: connect to a site with password + host-key prompt, browse, and edit sites, all in the binary
 ### Phase 3: Transfers, log, terminal, polish
 - [ ] T6: Bottom panel: Queue / Completed / Failed / Log tabs, progress bars, queue bindings, transfer bindings in panes (M)
@@ -89,3 +89,13 @@ _Appended per task during implementation._
 - `dialog_view.rs`: centered boxed overlay (`Clear` + bordered block), reversed cursor cell in text fields, bullets for masked text.
 - Remote `F8` delete still goes straight to `Command::Delete`: app-core already asks for confirmation (`confirm_delete`), shown by the T5 prompt dialogs.
 - 27 new tests (form 7, dialog 8, reducer 8, snapshots 5 → site editor, validation error with masked password, confirm, move picker, input).
+
+### T5 Prompts and utility dialogs (done)
+- **App prompts** (`prompt_ui.rs`, `prompt_view.rs`): `UiState.prompt: Option<PromptSlot { id, ui, answered }>` is synced to `AppState.prompt` (new id → fresh slot; none → cleared). While a prompt shows it receives *every* key and paste (above any open dialog); the answer goes out as `Command::Answer` and the slot is marked `answered`, so the still-unprocessed snapshot neither redraws the prompt nor accepts a second answer.
+  - Credential (password / passphrase / keyboard-interactive): masked fields (echoed when the server says so), `Remember` checkbox except for keyboard-interactive, `Enter` answers, `Esc` → `Credential(None)`; a retry note is shown. Up to 16 keyboard-interactive prompts.
+  - Host key / certificate: `y` once, `a` always, `n`/`Esc` reject. **No default key** — `Enter` does nothing, so a trust decision is never one stray key away.
+  - Conflict: `o` overwrite, `n` if newer, `r` resume, `s` skip, `k` keep both (rename), `a` toggles "apply to all", `Esc` skips (`Dismiss`).
+  - Confirm delete / quit: `y`/`Enter`, `n`/`Esc`. Message: `Enter`/`Esc`/`Space` dismiss; level picks the colour.
+- **Utility dialogs** (`dialog_util.rs`, plus `InputPurpose::GoTo`): `g` go to path (either pane, pre-filled with the current path, slashes allowed), `c` chmod (remote only; octal text and the nine rwx boxes stay in step both ways, special bits typed in octal survive a box toggle, `Enter` → `Command::Chmod`), `i` import (path pre-filled with `~/.config/filezilla/sitemanager.xml`, "Import passwords" box → `Command::ImportFileZilla`).
+- `Field.id` / `label` became `String` (prompt texts are dynamic).
+- 18 new tests (prompt_ui 6, dialog_util 5, reducer 5, snapshots: one per prompt kind ×8 plus chmod, go-to, import).
