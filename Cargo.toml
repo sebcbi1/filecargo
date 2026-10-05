@@ -2,7 +2,7 @@
 resolver = "3"
 members = ["crates/*"]
 # Plain `cargo build` / `cargo test` never compile the GUI (gpui); add new core/TUI crates here.
-default-members = ["crates/filecargo-config"]
+default-members = ["crates/filecargo-config", "crates/filecargo-remote-fs"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,7 +12,9 @@ publish = false
 
 [workspace.dependencies]
 filecargo-config = { path = "crates/filecargo-config" }
+filecargo-remote-fs = { path = "crates/filecargo-remote-fs" }
 
+async-trait = "0.1"
 base64 = "0.23.1"
 etcetera = "0.11.0"
 keyring-core = "1.0.0"
@@ -23,6 +25,7 @@ quick-xml = "0.42.0"
 secrecy = "0.10.3"
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
+tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros", "fs"] }
 toml = "1.1.6"
 tracing = "0.1.44"
 uuid = { version = "1.27.0", features = ["v4", "serde"] }

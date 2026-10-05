@@ -43,7 +43,7 @@ T3 docker servers + CI integration job ─────────────�
 
 ## Task List
 ### Phase 1: Foundation
-- [ ] T1: Crate, `RemotePath` (+ proptest), `Entry`, `FsError`, `Capabilities`, `Progress`, `RemoteFs` with `remove_all` (M)
+- [x] T1: Crate, `RemotePath` (+ proptest), `Entry`, `FsError`, `Capabilities`, `Progress`, `RemoteFs` with `remove_all` (M)
 - [ ] T2: `local::read_dir` / `stat`, `RootedFs`, contract suite macro, green on `RootedFs` (M)
 - [ ] T3: Docker test servers (OpenSSH + vsftpd image, 3 configs, keys/certs), `cargo it` alias, CI `integration` job (M)
 ### Checkpoint A: trait and contract suite reviewed; containers healthy locally and in CI
