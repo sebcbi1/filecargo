@@ -1,6 +1,6 @@
 # Spec: gui
 
-> Module id: `gui` · Crate: `crates/filecargo-gui` → bin **`filecargo`** · Depends on: `app-core` only · Status: **draft, awaiting review**
+> Module id: `gui` · Crate: `crates/filecargo-gui` → bin **`filecargo`** · Depends on: `app-core` only · Status: **implemented, awaiting final review**
 > Project-wide rules: [SPEC.md](SPEC.md). Plan: [tasks/gui/plan.md](tasks/gui/plan.md).
 
 ## Objective

@@ -49,6 +49,7 @@ impl TextPromptView {
             state.set_value(initial, window, cx);
             state
         });
+        super::focus_later(window, cx, &input);
         Self {
             label,
             input,
@@ -83,7 +84,7 @@ impl Render for TextPromptView {
 }
 
 /// Asks for a name and calls `on_name` with the trimmed text when it is valid.
-fn ask_name(
+pub fn ask_name(
     window: &mut Window,
     cx: &mut App,
     title: &'static str,
@@ -392,6 +393,7 @@ pub fn import(model: Entity<AppModel>, window: &mut Window, cx: &mut App) -> Ent
             state.set_value(initial, window, cx);
             state
         });
+        super::focus_later(window, cx, &path);
         ImportView {
             path,
             passwords: false,

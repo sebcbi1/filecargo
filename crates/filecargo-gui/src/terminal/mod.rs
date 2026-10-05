@@ -77,8 +77,12 @@ impl TerminalView {
         }
     }
 
+    /// Focuses the terminal when it shows a screen (otherwise there is nothing to type into and
+    /// the focus stays where it was).
     pub fn focus(&self, window: &mut Window, cx: &mut gpui_kit::App) {
-        self.focus.focus(window, cx);
+        if self.handle(cx).is_some() {
+            self.focus.focus(window, cx);
+        }
     }
 
     fn handle(&self, cx: &gpui_kit::App) -> Option<TerminalHandle> {

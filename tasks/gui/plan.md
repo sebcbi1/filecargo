@@ -1,6 +1,6 @@
 # Implementation Plan: `gui` module
 
-> Spec: [SPEC-gui.md](../../SPEC-gui.md) · Tasks: [todo.md](todo.md) · Status: **awaiting review** · 2026-10-05
+> Spec: [SPEC-gui.md](../../SPEC-gui.md) · Tasks: [todo.md](todo.md) · Status: **implemented, awaiting final review** · 2026-10-06
 > Starts after `tui` Checkpoint B: by then the TUI has exercised the app-core API end to end, so the GUI builds on a settled contract.
 
 ## Overview
@@ -30,17 +30,17 @@ through gpui-kit, and must never be added directly.
 ### Phase 1: Platform first
 - [x] T1: Crate + bin, `App::start`, gpui-kit bootstrap (`with_assets`, `init`, `open_window` + Root), `AppModel` watch bridge, empty resizable layout, theme sync, quit; CI `gui` job on 3 OSes (M)
 - [x] T2: File panes: `DataTable` delegate (columns, sort → `SetSort`, multi-select), local navigation (double-click, Enter, Backspace, path input), pane context menu (M)
-### Checkpoint A: the binary browses the local disk; CI gui job green on ubuntu/macos/windows
+### Checkpoint A: the binary browses the local disk; CI gui job green on ubuntu/macos/windows — reached locally (Linux); the GitHub job has not run
 ### Phase 2: Sessions and editing
 - [x] T3: Server tree view, connect/disconnect, remote pane, toolbar with session status (M)
 - [x] T4: Dialog infrastructure, site editor, tree context-menu operations (new, rename, duplicate, move, delete, import) (M)
 - [x] T5: Prompt dialogs for every `PromptKind`, permissions dialog, settings dialog, notices → notifications (M)
-### Checkpoint B: connect over SFTP with host-key and password prompts, edit sites, change settings
+### Checkpoint B: connect over SFTP with host-key and password prompts, edit sites, change settings — reached (headless tests with a served directory + a look at the real window under Xvfb)
 ### Phase 3: Transfers, terminal, polish
 - [x] T6: Bottom panel (`TabBar`), Queue / Completed / Failed tables with progress, Log `uniform_list`, transfer actions (F5, double-click, menus), batch-complete OS notification (M)
 - [x] T7: Terminal element (cells, runs, cursor, row cache), key mapping, clipboard, resize → `TerminalResize` (M)
-- [ ] T8: Full key-binding set, `SMOKE.md`, manual smoke on macOS / Linux / Windows, remaining headless tests (M)
-### Checkpoint C: all 7 AC green, smoke recorded, human review → v1 feature-complete
+- [x] T8: Full key-binding set, `SMOKE.md`, manual smoke on macOS / Linux / Windows, remaining headless tests (M)
+### Checkpoint C: all 7 AC green, smoke recorded, human review → v1 feature-complete — AC 1–5 green locally; AC6 (CI on 3 OSes) and AC7 (manual smoke) pending; human review pending
 
 ## AC Traceability
 AC1 → T1–T6 (each subcase in the task that builds it) · AC2 → T5 · AC3 → T7 · AC4 → T4 · AC5 → T1 · AC6 → T1 · AC7 → T8
@@ -118,3 +118,36 @@ _Appended per task during implementation._
 - **Key routing:** every key goes to the shell, so global shortcuts are bound with the context `!Terminal` (`secondary-q`, `secondary-,`), and `Tab` / `Shift-Tab`, which gpui binds to focus traversal, are re-bound in the `Terminal` context to actions that send the key. Copy / paste per the spec: with a mouse selection `secondary-c` (and `ctrl-shift-c`) copies, otherwise `ctrl-c` is a plain `^C`; `secondary-v` / `ctrl-shift-v` paste when the clipboard has text, otherwise `ctrl-v` goes to the shell. Mouse: click focuses and starts a selection, drag extends it (`selection_text`), the wheel → `TerminalScroll`. An exited shell shows its last screen and "Press Enter to reopen".
 - Tests (`tests/terminal.rs`, 5, with the fake shell behind a real app-core session): the tab opens the shell and the painted grid size reaches it, typed keys arrive as `ESC[A`, `^C`, Tab, `x`, **`Ctrl-Q` reaches the shell instead of quitting**, coloured / wide-character output is drawn for several frames without trouble and lands in the emulator, an exited shell reopens on Enter.
 - Not covered headlessly: pixels, the mouse selection and the clipboard (smoke list).
+
+### T8 Shortcuts, smoke, finish (done) → Checkpoints A–C reached locally (3-OS CI, manual smoke and the human review pending)
+- **Key bindings** (`workspace::bind_keys`, one place): global `secondary-q` quit, `secondary-,` settings, `secondary-k` connect the selected site, `secondary-1..5` bottom tabs — all scoped `!Terminal` so the shell keeps its keys; `ctrl-shift-1..5` switch tabs from anywhere (the way out of the terminal). `FilePane`: `Enter`, `Backspace`, `secondary-a`, `secondary-r`, `F5`, `F7` new remote folder, `F2` rename, `Delete`, `secondary-l` path bar. `ServerTree`: `Enter` connect, `F2`, `Delete`, `secondary-e`. `Queue`: `Delete`. `Terminal`: `Tab` / `Shift-Tab` re-bound to send the key (gpui binds them to focus traversal).
+- Pane context menu is now complete: Upload / Download, (remote) New folder… / Rename… / Delete / Permissions…, Refresh. (T5 / T6 notes said Permissions and transfers were in the menu; the code had not hooked them up until now.)
+- Dialogs focus their first input when they open (site editor name, name prompts, import path, settings, octal, credential prompts).
+- **Found by running the real binary under Xvfb** (see `SMOKE.md`): with a start-up notice (no keychain), `NoticeHost` / `PromptHost` used `window.push_notification` / `open_dialog` while the window's `Root` did not exist yet and panicked ("component window state is missing"). They now sync one tick later (`cx.defer_in`). No headless test could catch it because the test app has no start-up notices; `tests/window.rs` does not cover it either — worth a regression test if the review wants one.
+- `SMOKE.md` has the manual checklist (AC7) and a record table: the Xvfb run and the headless suite are filled in; macOS, a real Linux display and Windows are **pending a human**. The frame-time target at 200×60 is unmeasured.
+- Tests: 76 in the crate — `tests/{window 3, panes 6, tree 4, dialogs 8, prompts 10, utility 3, transfers 5, terminal 5, shortcuts 6}` plus 28 unit tests (`site_form`, `settings`, `permissions`, `runs`, `keys`, `queue`, `notices`, `format`, …).
+
+### Acceptance criteria → tests
+| AC | Covered by |
+|---|---|
+| 1 i window opens · ii snapshot re-renders | `tests/window.rs` |
+| 1 iii double-click a site connects | `tests/tree.rs` |
+| 1 iv double-click a directory navigates | `tests/panes.rs` |
+| 1 v multi-select (plain / secondary / shift) | `tests/panes.rs` |
+| 1 vi `F5` sends Upload / Download with the selection | `tests/transfers.rs` |
+| 1 vii credential dialog → `Answer` | `tests/prompts.rs` |
+| 2 one test per `PromptKind` | `tests/prompts.rs` |
+| 3 cells → runs; headless render; keys → bytes | `src/terminal/runs.rs`, `tests/terminal.rs`, `src/terminal/keys.rs` |
+| 4 site editor round trip | `tests/dialogs.rs` |
+| 5 theme switch re-renders | `tests/window.rs` |
+| 6 CI on three OSes | `.github/workflows/ci.yml` `gui` job (clippy, build, test; **not run on GitHub**) |
+| 7 manual smoke | `crates/filecargo-gui/SMOKE.md` (pending) |
+
+### Deviations from SPEC-gui.md (for the reviewer)
+- `AppModel` polls the snapshot channel every 33 ms instead of awaiting `changed()` (gpui's deterministic test scheduler panics on cross-thread wakeups).
+- No own row cache in the terminal element (gpui caches shaped lines); frame time unmeasured.
+- Shift+Arrow range selection in the file panes is not implemented (the table owns the arrow keys); shift-click ranges are.
+- `ctrl-shift-1..5` added as the keyboard way out of the terminal tab.
+- Toolbar: *Connect*, *Disconnect*, *Refresh*, *New site*, *New server folder*, *Import…*, *Settings*, *Upload*, *Download*, *Pause transfers* and the session indicator; remote *New folder / Rename / Delete* live in the pane menu and on `F7` / `F2` / `Delete` rather than as toolbar buttons.
+- Dependencies: `gpui-kit =0.7.1` (workspace dependency) and `filecargo-app-core`. Dev: `filecargo-remote-fs`, `async-trait`, `filecargo-config`, `tempfile`.
+- A `shell.nix` at the repository root provides the build environment on NixOS.

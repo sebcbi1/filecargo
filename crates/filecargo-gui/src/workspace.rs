@@ -19,7 +19,19 @@ use crate::prompts::PromptHost;
 use crate::toolbar::session_label;
 use crate::tree::ServerTreeView;
 
-gpui_kit::actions!(filecargo, [Quit, OpenSettings]);
+gpui_kit::actions!(
+    filecargo,
+    [
+        Quit,
+        OpenSettings,
+        ConnectSelected,
+        ShowQueue,
+        ShowCompleted,
+        ShowFailed,
+        ShowLog,
+        ShowTerminal
+    ]
+);
 
 pub struct Workspace {
     pub model: Entity<AppModel>,
@@ -136,7 +148,7 @@ impl Workspace {
                 Button::new("new-folder")
                     .small()
                     .icon(IconName::FolderClosed)
-                    .label("New folder")
+                    .label("New server folder")
                     .on_click(cx.listener(|this, _, window, cx| {
                         let parent = this.tree.read(cx).target_folder(cx);
                         crate::dialogs::tree_ops::new_folder(
@@ -247,6 +259,20 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
                 crate::dialogs::settings::open(this.model.clone(), window, cx);
             }))
+            .on_action(cx.listener(|this, _: &ConnectSelected, _, cx| {
+                if let Some(site) = this.selected_site(cx) {
+                    this.model.read(cx).send(Command::Connect(site));
+                }
+            }))
+            .on_action(cx.listener(|this, _: &ShowQueue, window, cx| this.show_tab(0, window, cx)))
+            .on_action(
+                cx.listener(|this, _: &ShowCompleted, window, cx| this.show_tab(1, window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ShowFailed, window, cx| this.show_tab(2, window, cx)))
+            .on_action(cx.listener(|this, _: &ShowLog, window, cx| this.show_tab(3, window, cx)))
+            .on_action(
+                cx.listener(|this, _: &ShowTerminal, window, cx| this.show_tab(4, window, cx)),
+            )
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
@@ -267,7 +293,10 @@ impl Render for Workspace {
 /// The key bindings of the whole application.
 pub fn bind_keys(cx: &mut gpui_kit::App) {
     use crate::bottom::RemoveItem;
-    use crate::pane::{OpenRow, ParentDir, RefreshPane, SelectAllRows, TransferSelection};
+    use crate::pane::{
+        DeleteEntries, FocusPath, NewRemoteFolder, OpenRow, ParentDir, RefreshPane, RenameEntry,
+        SelectAllRows, TransferSelection,
+    };
     use crate::terminal::{SendBackTab, SendTab};
     use crate::tree::{DeleteSelected, EditSelected, RenameSelected};
     use gpui_kit::KeyBinding;
@@ -279,6 +308,23 @@ pub fn bind_keys(cx: &mut gpui_kit::App) {
         KeyBinding::new("secondary-a", SelectAllRows, Some("FilePane")),
         KeyBinding::new("secondary-r", RefreshPane, Some("FilePane")),
         KeyBinding::new("f5", TransferSelection, Some("FilePane")),
+        KeyBinding::new("f7", NewRemoteFolder, Some("FilePane")),
+        KeyBinding::new("f2", RenameEntry, Some("FilePane")),
+        KeyBinding::new("delete", DeleteEntries, Some("FilePane")),
+        KeyBinding::new("secondary-l", FocusPath, Some("FilePane")),
+        KeyBinding::new("enter", ConnectSelected, Some("ServerTree")),
+        KeyBinding::new("secondary-k", ConnectSelected, Some("!Terminal")),
+        KeyBinding::new("secondary-1", ShowQueue, Some("!Terminal")),
+        KeyBinding::new("secondary-2", ShowCompleted, Some("!Terminal")),
+        KeyBinding::new("secondary-3", ShowFailed, Some("!Terminal")),
+        KeyBinding::new("secondary-4", ShowLog, Some("!Terminal")),
+        KeyBinding::new("secondary-5", ShowTerminal, Some("!Terminal")),
+        // the way out of the terminal by keyboard: it keeps every other key
+        KeyBinding::new("ctrl-shift-1", ShowQueue, None),
+        KeyBinding::new("ctrl-shift-2", ShowCompleted, None),
+        KeyBinding::new("ctrl-shift-3", ShowFailed, None),
+        KeyBinding::new("ctrl-shift-4", ShowLog, None),
+        KeyBinding::new("ctrl-shift-5", ShowTerminal, None),
         KeyBinding::new("tab", SendTab, Some("Terminal")),
         KeyBinding::new("shift-tab", SendBackTab, Some("Terminal")),
         KeyBinding::new("delete", RemoveItem, Some("Queue")),
@@ -286,4 +332,16 @@ pub fn bind_keys(cx: &mut gpui_kit::App) {
         KeyBinding::new("delete", DeleteSelected, Some("ServerTree")),
         KeyBinding::new("secondary-e", EditSelected, Some("ServerTree")),
     ]);
+}
+
+impl Workspace {
+    /// Shows a bottom tab; the terminal takes the keyboard focus.
+    pub fn show_tab(&mut self, tab: usize, window: &mut Window, cx: &mut Context<Self>) {
+        self.bottom
+            .update(cx, |bottom, cx| bottom.select_tab(tab, cx));
+        if tab == 4 {
+            let terminal = self.bottom.read(cx).terminal.clone();
+            terminal.update(cx, |t, cx| t.focus(window, cx));
+        }
+    }
 }

@@ -57,6 +57,7 @@ impl PermissionsView {
             state
         });
         // typing octal moves the boxes (set_value does not emit Change, so there is no loop)
+        super::focus_later(window, cx, &octal);
         let _subscription = cx.subscribe(&octal, |this, input, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change)
                 && let Some(mode) = parse_octal(&input.read(cx).value())

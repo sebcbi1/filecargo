@@ -133,8 +133,10 @@ fn choose(
 impl SettingsView {
     pub fn new(model: Entity<AppModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let form = SettingsForm::of(&model.read(cx).state.settings);
+        let max_concurrent = text(window, cx, &form.max_concurrent);
+        super::focus_later(window, cx, &max_concurrent);
         Self {
-            max_concurrent: text(window, cx, &form.max_concurrent),
+            max_concurrent,
             timeout: text(window, cx, &form.timeout),
             keepalive: text(window, cx, &form.keepalive),
             local_start_dir: text(window, cx, &form.local_start_dir),

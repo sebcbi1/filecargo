@@ -87,6 +87,8 @@ impl SiteEditorView {
         let protocol = choice(window, cx, &PROTOCOLS, values.protocol);
         let auth = choice(window, cx, &AUTHS, values.auth);
         let ftp_mode = choice(window, cx, &FTP_MODES, usize::from(values.ftp_active));
+        let name = text(window, cx, "Name", &values.name);
+        super::focus_later(window, cx, &name);
         let mut subscriptions = Vec::new();
         for select in [&protocol, &auth] {
             // the visible fields depend on these
@@ -96,7 +98,7 @@ impl SiteEditorView {
             model,
             original,
             folder,
-            name: text(window, cx, "Name", &values.name),
+            name,
             host: text(window, cx, "Host", &values.host),
             port: text(window, cx, "Default for the protocol", &values.port),
             user: text(window, cx, "User", &values.user),

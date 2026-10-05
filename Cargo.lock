@@ -2406,7 +2406,6 @@ dependencies = [
  "filecargo-remote-fs",
  "gpui-kit",
  "tempfile",
- "tokio",
 ]
 
 [[package]]

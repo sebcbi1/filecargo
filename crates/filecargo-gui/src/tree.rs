@@ -132,6 +132,16 @@ impl ServerTreeView {
 
 impl Render for ServerTreeView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.nodes.is_empty() {
+            return div()
+                .id("server-tree")
+                .size_full()
+                .p_3()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child("No servers yet.\nUse New site or Import… in the toolbar.")
+                .into_any_element();
+        }
         let session = self.model.read(cx).state.session.clone();
         let nodes = self.nodes.clone();
         let model = self.model.clone();
@@ -232,6 +242,7 @@ impl Render for ServerTreeView {
                 }
             }))
             .child(tree)
+            .into_any_element()
     }
 }
 

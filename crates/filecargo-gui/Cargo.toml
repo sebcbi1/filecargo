@@ -19,7 +19,6 @@ filecargo-app-core.workspace = true
 anyhow.workspace = true
 # GPUI comes through gpui-kit only; never add gpui / gpui-component directly.
 gpui-kit.workspace = true
-tokio.workspace = true
 
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }

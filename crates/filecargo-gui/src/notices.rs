@@ -22,14 +22,15 @@ impl NoticeHost {
     pub fn new(model: Entity<AppModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let _subscription =
             cx.observe_in(&model, window, |this, _, window, cx| this.sync(window, cx));
-        let mut host = Self {
+        let host = Self {
             model,
             seen: HashSet::new(),
             pending_before: 0,
             done_before_batch: 0,
             _subscription,
         };
-        host.sync(window, cx);
+        // the window is not complete yet (its Root is built after this view): wait a tick
+        cx.defer_in(window, |host, window, cx| host.sync(window, cx));
         host
     }
 

@@ -55,7 +55,7 @@ Servers, folders and settings are shared: a site added in one UI exists in the o
 | `terminal` | PTY shell channel on the SFTP session's SSH connection; VT parsing into a screen grid both UIs render | `remote-fs` | [SPEC-terminal.md](SPEC-terminal.md) | done (awaiting final review) |
 | `app-core` | UI-agnostic app state + commands: session, pane state, server-tree ops, log bus, event stream: the single API both front-ends drive | `config`, `remote-fs`, `transfer`, `terminal` | [SPEC-app-core.md](SPEC-app-core.md) | done (awaiting final review) |
 | `tui` | ratatui front-end → bin `filecargo-tui` | `app-core` | [SPEC-tui.md](SPEC-tui.md) | done (awaiting final review) |
-| `gui` | gpui front-end → bin `filecargo` | `app-core` | [SPEC-gui.md](SPEC-gui.md) | spec drafted |
+| `gui` | gpui front-end → bin `filecargo` | `app-core` | [SPEC-gui.md](SPEC-gui.md) | done (awaiting final review) |
 
 **Build order:** `config` → `remote-fs` → `transfer`, `terminal` (parallel) → `app-core` → `tui` → `gui`
 

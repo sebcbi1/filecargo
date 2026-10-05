@@ -7,7 +7,6 @@ pub mod queue;
 use std::sync::Arc;
 
 use filecargo_app_core::prelude::*;
-use gpui_kit::Focusable as _;
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::table::{DataTable, TableState};
 use gpui_kit::component::v_flex;
@@ -151,8 +150,9 @@ impl Render for BottomPanel {
             .on_click(cx.listener(|this, index: &usize, window, cx| {
                 this.select_tab(*index, cx);
                 if *index == 4 {
-                    let focus = this.terminal.read(cx).focus_handle(cx);
-                    focus.focus(window, cx);
+                    this.terminal
+                        .clone()
+                        .update(cx, |t, cx| t.focus(window, cx));
                 }
             }));
         let body = match self.tab {

@@ -74,3 +74,15 @@ pub fn confirm(
         }
     });
 }
+
+/// Puts the keyboard focus in `input` once the dialog around it is on screen.
+pub fn focus_later(
+    window: &mut Window,
+    cx: &mut App,
+    input: &Entity<gpui_kit::component::input::InputState>,
+) {
+    let input = input.clone();
+    window.defer(cx, move |window, cx| {
+        input.update(cx, |state, cx| state.focus(window, cx));
+    });
+}

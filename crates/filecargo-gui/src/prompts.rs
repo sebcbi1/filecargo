@@ -33,12 +33,13 @@ impl PromptHost {
         let _subscription = cx.observe_in(&model, window, |this, _, window, cx| {
             this.sync(window, cx);
         });
-        let mut host = Self {
+        let host = Self {
             model,
             shown: None,
             _subscription,
         };
-        host.sync(window, cx);
+        // the window is not complete yet (its Root is built after this view): wait a tick
+        cx.defer_in(window, |host, window, cx| host.sync(window, cx));
         host
     }
 
@@ -508,13 +509,16 @@ fn open_credential(
                 false,
             ),
         };
-    let inputs = fields
+    let inputs: Vec<Entity<InputState>> = fields
         .iter()
         .map(|(_, masked)| {
             let masked = *masked;
             cx.new(|cx| InputState::new(window, cx).masked(masked))
         })
         .collect();
+    if let Some(first) = inputs.first() {
+        crate::dialogs::focus_later(window, cx, first);
+    }
     let view = cx.new(|_| CredentialView {
         lines,
         inputs,
