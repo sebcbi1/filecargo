@@ -1,0 +1,31 @@
+[package]
+name = "filecargo-tui"
+description = "Terminal front-end for filecargo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lib]
+name = "filecargo_tui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "filecargo-tui"
+path = "src/main.rs"
+
+[dependencies]
+filecargo-app-core.workspace = true
+anyhow.workspace = true
+crossterm.workspace = true
+futures-util.workspace = true
+ratatui.workspace = true
+tokio.workspace = true
+tui-term.workspace = true
+tui-tree-widget.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true

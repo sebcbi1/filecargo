@@ -27,7 +27,7 @@ Work is sliced by screen area, so every task ends with a runnable binary that do
 
 ## Task List
 ### Phase 1: Walking skeleton
-- [ ] T1: Crate + bin, args (`--version`, `--config-dir`), `App::start`, terminal init/restore + panic hook (plus our own mouse-capture/bracketed-paste enable and disable), loop skeleton rendering an empty layout (S)
+- [x] T1: Crate + bin, args (`--version`, `--config-dir`), `App::start`, terminal init/restore + panic hook (plus our own mouse-capture/bracketed-paste enable and disable), loop skeleton rendering an empty layout (S)
 - [ ] T2: Layout, local pane `Table`, `UiState` focus/cursor/selection, reducer for navigation and selection, too-small screen (M)
 ### Checkpoint A: binary browses local files; AC3, AC5 green; first snapshots reviewed
 ### Phase 2: Servers and sessions
@@ -57,3 +57,9 @@ None.
 
 ## Hand-off Notes
 _Appended per task during implementation._
+
+### T1 Skeleton binary (done)
+- Crate = lib `filecargo_tui` + bin `filecargo-tui` (all logic in the lib so it is testable). `main`: `--version`, `--help`, `--config-dir <path>` (→ `StartOptions.paths = Paths::from_override`, **no `set_var`**: the workspace forbids `unsafe`; `Paths` is now in app-core's prelude), `App::start`, `init_logging`, `guard::enter`, the loop on the app's runtime (`runtime().block_on`), `guard::leave`, `app.shutdown(3 s)`.
+- `guard.rs`: `enter()` = `ratatui::init()` (raw mode, alternate screen, its own panic hook) **plus** mouse capture and bracketed paste, which `init` does not enable; our panic hook disables them first and chains to ratatui's. `leave()` undoes everything and is safe to call twice or without a terminal. `install_panic_restore(restore)` is the injectable piece AC5 tests.
+- `app_loop.rs`: `tokio::select!` over crossterm's `EventStream`, `snapshots.changed()` (an `Err` means the app has quit → return) and a 250 ms tick that only marks the screen dirty while transfers or a connection are active. Key release events are dropped (`is_press() || is_repeat()`, needed on Windows). The renderer is a `&mut dyn FnMut` so a test can make it panic.
+- Verified: `tests/panic.rs` (restore runs **before** the previous hook prints the message; `leave()` without a terminal); and by driving the real binary through a pseudo-terminal (`script`): it enters the alternate screen with mouse + paste, draws, exits 0 on `q`, and ends with the disable / leave / show-cursor sequences.

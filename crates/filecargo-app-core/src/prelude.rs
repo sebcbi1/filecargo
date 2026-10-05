@@ -13,8 +13,8 @@ pub use crate::state::{
 // config
 pub use filecargo_config::{
     Auth, ConflictRule, ConnectionSettings, Folder, FolderId, FtpMode, LogLevel, LogSettings, Node,
-    NodeId, Protocol, SecretString, ServerTree, Settings, Site, SiteId, TransferSettings, TreeOp,
-    UiSettings,
+    NodeId, Paths, Protocol, SecretString, ServerTree, Settings, Site, SiteId, TransferSettings,
+    TreeOp, UiSettings,
 };
 // remote-fs
 pub use filecargo_remote_fs::{
