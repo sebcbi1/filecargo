@@ -42,7 +42,7 @@ T1 actor/runtime/snapshots ─┬─ T2 logging
 ### Checkpoint A: AC1, AC2 green; snapshot API reviewed (UI authors depend on it)
 ### Phase 2: Browsing
 - [x] T4: Prompt queue, `Prompter` impl, `Answer` routing, stale-id handling (M)
-- [ ] T5: Local pane: listing, navigation, sort (natural, dirs first), hidden filter, generation race (M)
+- [x] T5: Local pane: listing, navigation, sort (natural, dirs first), hidden filter, generation race (M)
 - [ ] T6: Connect flow via `SessionFactory`, `SessionState` steps, remote pane, auto-reconnect once (M)
 - [ ] T7: Remote ops: mkdir, rename, delete with confirm (recursive), chmod (S)
 ### Checkpoint B: AC3, AC4, AC5, AC8, AC9 green
@@ -96,3 +96,9 @@ _Appended per task during implementation._
 - New public `AppHandle::prompter()` (not in the spec sketch): the prompter every session uses, for embedders and tests that open sessions themselves.
 - Lesson for UI authors and tests: a snapshot can lag one publish behind an `Answer`, so after answering, wait for a prompt with a **different id** instead of "any prompt" (the first version of the test answered a stale prompt and hung; tests now join tasks with a 5 s timeout via `Fixture::join`).
 - 5 tests: two concurrent requests shown one at a time in order, cancel → `None`, wrong answer kind → refusal, unknown/stale ids ignored, messages dismissed, shutdown with a pending prompt.
+
+### T5 Local pane and sorting (done)
+- `pane.rs`: a listing runs in a spawned task (`canonicalize` + `local::read_dir`, dotfiles and the Windows hidden attribute filtered according to `settings.ui.show_hidden`) and reports back as `Msg::LocalListed { seq, result }`. Every request bumps `local_seq`; **a result whose `seq` is no longer the newest is discarded** (navigation race, AC5: tested by navigating into a 20,000-entry directory and then a tiny one immediately, so the big listing finishes last). On success the pane gets the canonical path (Windows `\\?\` prefix stripped), sorted entries and `generation += 1`; on failure the **old path and entries stay**, `error` is set, `loading` is cleared. `Navigate` accepts absolute, relative (`docs/../src/.`) and `~` / `~/x`; `Up`, `Refresh`, `SetSort` (re-sorts the entries in hand, bumps `generation`, no new listing). The first listing starts when the actor starts; toggling `show_hidden` in the settings re-lists.
+- `sort.rs`: `natural_cmp` (case-insensitive, digit runs compare as numbers, leading zeros as a final tie-break so the order is total) and `sort_entries`: directories first, then the key; **descending reverses only the primary key, ties are always by name ascending** (so directories, all of size 0, stay in name order under a size sort). Unit tests are the table-driven AC9 (dirs first for every key × direction, natural order, unknown times first, dotfile hiding).
+- `AppState.local.entries` is an `Arc<[Entry]>` shared between snapshots (asserted by pointer equality after an unrelated change).
+- 7 integration tests + 4 unit tests. The remote pane reuses this machinery in T6.

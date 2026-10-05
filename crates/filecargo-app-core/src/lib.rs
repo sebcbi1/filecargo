@@ -3,8 +3,10 @@
 mod app;
 mod command;
 mod logging;
+mod pane;
 mod prompt;
 mod session;
+mod sort;
 mod state;
 mod tree;
 

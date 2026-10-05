@@ -13,10 +13,11 @@ use tokio::time::Instant;
 
 use crate::command::Command;
 use crate::logging::LogBuffer;
+use crate::pane::LocalListing;
 use crate::prompt::{ActorPrompter, PromptRequest};
 use crate::session::{SessionFactory, default_factory};
 use crate::state::{
-    AppState, Level, Notice, NoticeId, Pane, Prompt, PromptAnswer, PromptId, PromptKind,
+    AppState, Level, Notice, NoticeId, Pane, PaneId, Prompt, PromptAnswer, PromptId, PromptKind,
     SessionState, StartError, TerminalState,
 };
 
@@ -113,6 +114,7 @@ impl App {
             last_publish: Instant::now(),
             prompts: VecDeque::new(),
             replies: HashMap::new(),
+            local_seq: 0,
             next_prompt: 0,
             next_notice: 0,
         };
@@ -161,6 +163,8 @@ pub(crate) enum Msg {
     Command(Command),
     /// A prompt requested by a background task (a session asking for a password, ...).
     Prompt(PromptRequest),
+    /// A local directory listing finished.
+    LocalListed(LocalListing),
     Shutdown(oneshot::Sender<()>),
 }
 
@@ -244,6 +248,8 @@ pub(crate) struct Core {
     dirty: bool,
     last_publish: Instant,
     pub(crate) prompts: VecDeque<Prompt>,
+    /// Id of the newest local listing request; older results are discarded.
+    pub(crate) local_seq: u64,
     /// Where the answer to a prompt goes, for prompts that came from a background task.
     pub(crate) replies: HashMap<PromptId, oneshot::Sender<PromptAnswer>>,
     next_prompt: u64,
@@ -252,6 +258,8 @@ pub(crate) struct Core {
 
 impl Core {
     async fn run(mut self, mut messages: mpsc::UnboundedReceiver<Msg>) {
+        let start = self.state.local.path.clone();
+        self.list_local(start);
         let interval = Duration::from_millis(1000 / SNAPSHOTS_PER_SECOND);
         loop {
             let wake = if self.dirty {
@@ -263,6 +271,7 @@ impl Core {
                 message = messages.recv() => match message {
                     Some(Msg::Command(command)) => self.handle(command),
                     Some(Msg::Prompt(request)) => self.request_prompt(request),
+                    Some(Msg::LocalListed(listing)) => self.on_local_listed(listing),
                     Some(Msg::Shutdown(ack)) => {
                         self.shutdown().await;
                         self.publish_now();
@@ -348,6 +357,16 @@ impl Core {
             Command::SetSitePassword { site, secret } => self.set_site_password(site, &secret),
             Command::UpdateSettings(settings) => self.update_settings(settings),
             Command::Answer { id, answer } => self.answer_prompt(id, answer),
+            Command::Navigate {
+                pane: PaneId::Local,
+                path,
+            } => self.navigate_local(&path),
+            Command::Up(PaneId::Local) => self.up_local(),
+            Command::Refresh(PaneId::Local) => self.refresh_local(),
+            Command::SetSort {
+                pane: PaneId::Local,
+                sort,
+            } => self.sort_local(sort),
             Command::DismissNotice(id) => {
                 self.state.notices.retain(|n| n.id != id);
                 self.changed();
@@ -432,9 +451,14 @@ impl Core {
         };
         match store.update_settings(|current| *current = settings) {
             Ok(()) => {
+                let hidden_before = self.state.settings.ui.show_hidden;
                 self.state.settings = Arc::new(store.settings().clone());
                 self.log.set_level(self.state.settings.log.level);
                 self.changed();
+                if self.state.settings.ui.show_hidden != hidden_before {
+                    // what is listed depends on it
+                    self.refresh_local();
+                }
             }
             Err(error) => self.message(Level::Error, "Settings not saved", error.to_string()),
         }
