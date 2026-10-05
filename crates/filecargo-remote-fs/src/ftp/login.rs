@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use filecargo_config::{Auth, ExposeSecret, Protocol, SecretKey, Site};
+use filecargo_config::{Auth, ExposeSecret, FtpMode, Protocol, SecretKey, Site};
 use suppaftp::tokio::AsyncRustlsFtpStream;
 use suppaftp::types::{FileType as TransferType, Mode};
 use suppaftp::{FtpError, Status};
@@ -133,7 +133,10 @@ pub(crate) async fn open(site: &Site, ctx: &ConnectContext) -> Result<FtpFs, Con
         // not fatal: some servers answer 200 only to a bare `OPTS UTF8 ON`
         let _ = ftp.opts("UTF8", Some("ON")).await;
     }
-    if features.has("EPSV") {
+    if site.ftp_mode == FtpMode::Active {
+        // EPRT / PORT: the server connects back to us (works on a LAN, not through NAT).
+        ftp = ftp.active_mode(timeout);
+    } else if features.has("EPSV") {
         ftp.set_mode(Mode::ExtendedPassive);
     } else {
         ftp.set_mode(Mode::Passive);

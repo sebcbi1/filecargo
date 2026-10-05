@@ -1,6 +1,6 @@
 # Implementation Plan: `remote-fs` module
 
-> Spec: [SPEC-remote-fs.md](../../SPEC-remote-fs.md) · Tasks: [todo.md](todo.md) · Status: **awaiting review** · 2026-10-05
+> Spec: [SPEC-remote-fs.md](../../SPEC-remote-fs.md) · Tasks: [todo.md](todo.md) · Status: **complete; awaiting final human review** · 2026-10-05
 > Starts now (depends only on `config`, which is done).
 
 ## Overview
@@ -57,8 +57,8 @@ T3 docker servers + CI integration job ─────────────�
 - [x] T8: FTP connection, login, `TYPE I`, FEAT/UTF8, MLSD parser + LIST fallback, metadata ops, serialized control connection (M)
 - [x] T9: FTP download/upload with resume (`REST` / `APPE`), cancel ⇒ broken, NOOP keepalive, redacted command log (M)
 - [x] T10: FTPS explicit + implicit: pinning verifier, cert prompt and pinning file, data-channel TLS, 522/534 ⇒ `TlsSessionReuseRequired` (M)
-- [ ] T11: Active mode (Linux CI), whole-run log redaction test, final contract run on all backends, coverage (S)
-### Checkpoint C: all 10 AC green, coverage ≥ 80 % (excluding Windows-only agent code), human review
+- [x] T11: Active mode (Linux CI), whole-run log redaction test, final contract run on all backends, coverage (S)
+### Checkpoint C: all 10 AC green, coverage ≥ 80 % (excluding Windows-only agent code), human review — AC and coverage done; human review pending
 
 ## AC Traceability
 | AC | Task | AC | Task |
@@ -155,3 +155,29 @@ _Appended per task during implementation._
 - **suppaftp ordering bug worked around** (`FtpFs::settle`): the library starts a data connection's TLS handshake *before* reading the server's reply to the command; a refused command (`550` missing file) never gets TLS, so the handshake fails with "tls handshake eof" and the real reply is left unread. After a `SecureError` on a data command we read that pending reply (2 s cap) and report it, so `NotFound` etc. survive on FTPS (found by the contract suite).
 - **AC6, measured:** with the default shared `ClientConfig`, the **reuse-required server (ProFTPD default) works**: rustls resumes the control session on data connections, so list / upload / download all succeed (the suite prints `AC6 outcome … list: ok, mkdir: ok, upload: ok`). With resumption off the same server answers `425 Unable to build data connection: Operation not permitted` after a *full* data handshake, which maps to `FsError::TlsSessionReuseRequired` (also: 522 / 534, or a TLS failure before any resumption). Resumption can be turned off with the new pub field **`ConnectContext::tls_session_resumption`** (default `true`); it exists so the failure path is testable and as an escape hatch. The SPEC's "known stack risk" (suppaftp #93) is therefore narrower in practice than feared: servers that accept TLS 1.3 ticket / TLS 1.2 session resumption work; revisit with a real FileZilla Server / vsftpd if one is available.
 - Contract suite is green on **rooted, sftp, ftp, ftp_list, ftps_explicit, ftps_implicit** (102 tests). Unit tests: pins (4), verifier (7, using throwaway certs in `tests/docker/certs`: `server.crt` self-signed, `expired.crt`, `leaf.crt` issued by a test CA whose key was discarded).
+
+### T11 Active mode, redaction, final run (done)  → Checkpoint C reached (human review pending)
+- **Active mode**: `Site.ftp_mode == Active` → `ftp.active_mode(timeout)` (EPRT/PORT). New docker service **`ftp-active`** (port 2124, ProFTPD `<Limit EPSV PASV> DenyAll`) so a working transfer there can only have been active; `tests/active_mode.rs` (Linux only) connects to the container's bridge IP and carries a **control experiment** (passive against the same server fails).
+- **Redaction (AC10)**: `tests/redaction.rs` runs SFTP password, SFTP encrypted key, FTP, explicit and implicit FTPS (each starting with a *wrong* sentinel secret) plus a failed login, with TRACE logging and **every `log` record bridged** (`tracing-log`), then asserts none of 5 secrets appears and every `PASS` line is `PASS ***`. The first run **failed** (as designed): suppaftp traces `CC OUT: PASS <password>` through `log`. Fix: suppaftp is built with its **`no-log`** feature (`log/max_level_off`), which compiles out *all* `log` records of every dependency (russh's included). Our own `tracing` events on `filecargo::protocol` are unaffected. `app-core` must still never bridge `log` below `debug` (defence in depth).
+- Final run (`cargo it`): 57 unit + 150 integration tests green; contract suite 102 (6 backends × 17); `cargo fmt --check` and `clippy --workspace --all-targets --features integration -D warnings` clean.
+- **Coverage** (`cargo llvm-cov -p filecargo-remote-fs --features integration`): **86.9 % lines** (lowest: `sftp/fs.rs` 62 % error paths, `tls/connector.rs` 45 %). Windows-only agent code is not compiled on Linux, so it is not in the figure.
+
+### Acceptance criteria → tests
+| AC | Covered by |
+|---|---|
+| 1 `RemotePath` | `path::tests` incl. the proptest round trips |
+| 2 contract suite | `tests/contract.rs`: 17 scenarios × {rooted, sftp, ftp, ftp_list, ftps_explicit, ftps_implicit} |
+| 3 SFTP auth | `tests/sftp_auth.rs` (password, plain key, encrypted key + session trust, agent with a real `ssh-agent`) |
+| 4 host keys | `sftp::host_keys::tests` + `tests/sftp_connect.rs` (user `known_hosts` byte-identical) |
+| 5 FTPS certs | `tests/ftps.rs` (prompt, trust once / always, reject, changed cert, corrupt pin file) + `tls::*` unit tests |
+| 6 reuse-required server | `tests/ftps.rs`: works with the shared session cache; with resumption off → exactly `TlsSessionReuseRequired` |
+| 7 retry-once | `tests/sftp_auth.rs`, `tests/ftp_fs.rs`, `credentials::tests` |
+| 8 shell | `tests/shell.rs`, `tests/shell_connection.rs` (one TCP connection, via `/proc`) |
+| 9 cancel ⇒ broken | `tests/ftp_cancel.rs` |
+| 10 no secrets in logs | `tests/redaction.rs` |
+
+### Open points for the human review
+- **CI is unverified on GitHub**: the `integration` job (and everything here) has only run locally; Windows-only agent code is compile-checked by CI alone.
+- ProFTPD replaced vsftpd as the FTP test server (vsftpd's listener crashes after the first TLS session on this host); spec table updated. A real vsftpd / FileZilla Server has not been tested against, so the TLS-session-reuse behaviour (AC6) is verified against ProFTPD only.
+- `transfer` will need an atomic-replace strategy (SFTP `rename` fails if the target exists) and should expect FTP `remove_all` to cost one data connection per non-empty directory.
+- New public fields beyond the spec sketch: `ConnectContext::{user_known_hosts, agent_socket, tls_session_resumption}`; `Session` has `shell: Option<ShellOpener>`; `Prompter::certificate`.

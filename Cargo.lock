@@ -967,6 +967,8 @@ dependencies = [
  "tokio-rustls",
  "toml",
  "tracing",
+ "tracing-log",
+ "tracing-subscriber",
  "x509-parser",
 ]
 

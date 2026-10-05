@@ -31,7 +31,8 @@ tracing = "0.1.44"
 sha2 = "0.10"
 russh = { version = "=0.64.1", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "3.0.1"
-suppaftp = { version = "=12.1.1", default-features = false, features = ["tokio-rustls-ring", "deprecated"] }
+# `no-log` compiles out every `log` record: suppaftp traces raw control traffic, including `PASS <password>`.
+suppaftp = { version = "=12.1.1", default-features = false, features = ["tokio-rustls-ring", "deprecated", "no-log"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 rustls-platform-verifier = "0.7.1"
@@ -42,6 +43,7 @@ uuid = { version = "1.27.0", features = ["v4", "serde"] }
 proptest = "1.11.0"
 tempfile = "3.27.0"
 tracing-subscriber = "0.3.23"
+tracing-log = "0.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

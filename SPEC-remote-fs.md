@@ -1,6 +1,6 @@
 # Spec: remote-fs
 
-> Module id: `remote-fs` · Crate: `crates/filecargo-remote-fs` · Depends on: `config` · Status: **draft, awaiting review**
+> Module id: `remote-fs` · Crate: `crates/filecargo-remote-fs` · Depends on: `config` · Status: **implemented, awaiting final review**
 > Project-wide rules: [SPEC.md](SPEC.md). Plan: [tasks/remote-fs/plan.md](tasks/remote-fs/plan.md).
 
 ## Objective
@@ -249,8 +249,10 @@ pub mod local {
   `PASS` arguments and any secret replaced by `***`. Connect, auth method, host-key and TLS
   decisions at `info`. Never log a secret, at any level.
 - The FTP library logs raw control traffic, **including `PASS <password>`**, through the `log`
-  crate at `trace`. filecargo never bridges `log` records below `debug` for the `suppaftp`
-  target. The FTP backend logs commands and replies itself, redacted.
+  crate at `trace`. `suppaftp` is therefore built with its **`no-log`** feature, which compiles
+  out every `log` record (also russh's). `app-core` must still never bridge `log` below
+  `debug`. The FTP backend logs commands and replies itself on `filecargo::protocol`, redacted
+  (`> PASS ***`).
 
 ## Test servers (`tests/docker/compose.yml`)
 
@@ -260,6 +262,8 @@ pub mod local {
 | `ftp` | `tests/docker/proftpd/Dockerfile` (Alpine ProFTPD 1.3.8 + mod_tls), `explicit.conf` | plain + explicit TLS, `NoSessionReuseRequired` |
 | `ftps-implicit` | same image, `implicit.conf` | implicit TLS | 9990, passive 30050–30099 |
 | `ftps-reuse` | same image, `reuse.conf` | explicit TLS, session reuse required (ProFTPD default) | 2122, passive 30100–30149 |
+| `ftp-list` | same image, `list.conf` | plain FTP, `FactsAdvertise off` (no MLSD in FEAT) and `TimeoutIdle 5`: forces the `LIST` fallback, proves the keepalive | 2123, passive 30150–30199 |
+| `ftp-active` | same image, `active.conf` | refuses `PASV` / `EPSV`: only active mode can transfer | 2124 (bridge IP only) |
 
 - Passive ranges are published 1:1, with `MasqueradeAddress 127.0.0.1`. vsftpd (the first choice) was dropped: its listener process segfaults after the first completed TLS session on the dev host, on both Alpine 3.21 and Debian bookworm builds.
 - **Active mode** can't work through published localhost ports (servers refuse a `PORT` from

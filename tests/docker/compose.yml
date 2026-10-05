@@ -53,3 +53,12 @@ services:
     volumes: ["./certs:/certs:ro"]
     ports: ["2123:2123", "30150-30199:30150-30199"]
     healthcheck: *ftp-health
+
+  # Refuses PASV/EPSV: a transfer that works here was necessarily active mode. Active mode
+  # cannot cross the published localhost ports, so tests use this container's bridge IP.
+  ftp-active:
+    build: ./proftpd
+    environment: { CONF: active.conf }
+    volumes: ["./certs:/certs:ro"]
+    ports: ["2124:2124"]
+    healthcheck: *ftp-health

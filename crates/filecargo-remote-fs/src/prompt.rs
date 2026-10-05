@@ -103,3 +103,31 @@ pub struct CertificatePrompt {
     /// Lower-case hex SHA-256 of the DER certificate.
     pub sha256: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_credential_answer_never_prints_its_values() {
+        let answer = CredentialAnswer {
+            values: vec![SecretString::from("hunter2".to_owned())],
+            remember: true,
+        };
+        let text = format!("{answer:?}");
+        assert!(!text.contains("hunter2"), "{text}");
+        assert!(text.contains("remember: true"));
+    }
+
+    #[test]
+    fn certificate_problems_read_as_sentences() {
+        for (problem, word) in [
+            (CertificateProblem::Expired, "expired"),
+            (CertificateProblem::SelfSigned, "self-signed"),
+            (CertificateProblem::NameMismatch, "different host name"),
+            (CertificateProblem::Untrusted, "trusted authority"),
+        ] {
+            assert!(problem.to_string().contains(word), "{problem:?}");
+        }
+    }
+}
