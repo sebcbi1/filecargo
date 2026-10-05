@@ -982,7 +982,11 @@ dependencies = [
 name = "filecargo-terminal"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "filecargo-config",
  "filecargo-remote-fs",
+ "secrecy",
+ "tempfile",
  "tokio",
  "tracing",
  "vt100",

@@ -14,6 +14,10 @@ vt100.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+filecargo-config.workspace = true
+async-trait.workspace = true
+secrecy.workspace = true
+tempfile.workspace = true
 
 [features]
 # Opens a real shell on the Docker SFTP server (see `cargo it`).

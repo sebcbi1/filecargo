@@ -1,6 +1,6 @@
 # Implementation Plan: `terminal` module
 
-> Spec: [SPEC-terminal.md](../../SPEC-terminal.md) · Tasks: [todo.md](todo.md) · Status: **awaiting review** · 2026-10-05
+> Spec: [SPEC-terminal.md](../../SPEC-terminal.md) · Tasks: [todo.md](todo.md) · Status: **complete; awaiting final human review** · 2026-10-05
 > Starts after `remote-fs` Checkpoint B (`ShellOpener` / `ShellChannel` exist). Can run in parallel with `transfer`.
 
 ## Overview
@@ -22,7 +22,7 @@ tested against an in-memory fake channel; one integration test uses the docker S
 ## Task List
 - [x] T1: Crate + `Key` / `Mods` / `Modes` + `encode` with xterm table tests (S)
 - [x] T2: `spawn` + `TerminalHandle` over a fake channel: feed, generation, resize coalescing, paste (bracketed or not), scrollback + return-to-live, exit status, close (M)
-- [ ] T3: Integration vs docker SSH: `printf`, resize + `stty size` (S)
+- [x] T3: Integration vs docker SSH: `printf`, resize + `stty size` (S)
 ### Checkpoint: all 7 AC green, coverage ≥ 80 %, human review
 
 ## AC Traceability
@@ -51,3 +51,18 @@ _Appended per task during implementation._
 - **Paste hardening:** in bracketed mode any `ESC[201~` inside the pasted text is stripped, so pasted content cannot end the bracket early and have the rest executed as typed input. Unbracketed paste turns `\r\n` / `\n` into `\r`.
 - After `Exit(code)` the status is `Exited(code)` (a later `Closed` does not overwrite it), the screen stays readable and all input is dropped; a channel that disappears without an exit gives `Closed`.
 - 13 tests against an in-memory fake channel (AC2–AC6 plus title/bell/selection, split escape sequences, 300 KB of output, close, keys in application-cursor mode); resize tests use paused time.
+
+### T3 Docker integration (done) → module complete (human review pending)
+- `tests/integration.rs` (`--features integration`): real `remote_fs::connect` + `ShellOpener::open`, `spawn`, type `printf 'ok\n'` and wait for a row that is exactly `ok` (not the command echo), `resize(100×30)`, then `stty size` shows `30 100` and the parser is 30×100. ~0.5 s. `cargo it` now covers three crates.
+- Coverage (`cargo llvm-cov -p filecargo-terminal --features integration`): **96.9 % lines**. fmt and clippy (`-D warnings`) clean for the workspace.
+
+### AC → tests
+| AC | Covered by |
+|---|---|
+| 1 key table | `keys::tests` (~65 rows × both cursor modes) |
+| 2 output → screen, generation | `tests/handle.rs::output_reaches_the_screen…`, split escape sequences |
+| 3 resize coalescing | `ten_resizes_in_fifty_milliseconds…` (paused time) |
+| 4 bracketed paste | `paste_is_bracketed_only_when…`, `pasted_text_cannot_close_the_bracket_early` |
+| 5 scrollback | `scrollback_shows_earlier_lines_and_typing_returns_to_live` |
+| 6 exit | `exit_keeps_the_screen_and_drops_later_input` |
+| 7 docker shell | `tests/integration.rs` |

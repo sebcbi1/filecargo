@@ -1,6 +1,6 @@
 # Spec: terminal
 
-> Module id: `terminal` · Crate: `crates/filecargo-terminal` · Depends on: `remote-fs` · Status: **draft, awaiting review**
+> Module id: `terminal` · Crate: `crates/filecargo-terminal` · Depends on: `remote-fs` · Status: **implemented, awaiting final review**
 > Project-wide rules: [SPEC.md](SPEC.md). Plan: [tasks/terminal/plan.md](tasks/terminal/plan.md).
 
 ## Objective
