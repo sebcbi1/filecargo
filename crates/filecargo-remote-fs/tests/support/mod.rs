@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use filecargo_remote_fs::{
-    CredentialAnswer, CredentialPrompt, HostKeyPrompt, Prompter, TrustDecision,
+    CertificatePrompt, CredentialAnswer, CredentialPrompt, HostKeyPrompt, Prompter, TrustDecision,
 };
 
 type Script = Option<(Vec<String>, bool)>;
@@ -42,6 +42,8 @@ pub struct TestPrompter {
     /// Popped one per credential prompt; `None` entries cancel the prompt.
     pub credential_answers: Mutex<VecDeque<Script>>,
     pub host_key_prompts: Mutex<Vec<HostKeyPrompt>>,
+    pub cert_decision: Mutex<Option<TrustDecision>>,
+    pub certificate_prompts: Mutex<Vec<CertificatePrompt>>,
     pub credential_prompts: Mutex<Vec<CredentialPrompt>>,
 }
 
@@ -53,6 +55,15 @@ impl TestPrompter {
     pub fn trust(self: &Arc<Self>, decision: TrustDecision) -> Arc<Self> {
         *self.host_key_decision.lock().unwrap() = Some(decision);
         self.clone()
+    }
+
+    pub fn trust_cert(self: &Arc<Self>, decision: TrustDecision) -> Arc<Self> {
+        *self.cert_decision.lock().unwrap() = Some(decision);
+        self.clone()
+    }
+
+    pub fn certificate_prompt_count(&self) -> usize {
+        self.certificate_prompts.lock().unwrap().len()
     }
 
     pub fn answer(&self, values: &[&str], remember: bool) {
@@ -84,6 +95,14 @@ impl Prompter for TestPrompter {
                 .collect(),
             remember,
         })
+    }
+
+    async fn certificate(&self, request: CertificatePrompt) -> TrustDecision {
+        self.certificate_prompts.lock().unwrap().push(request);
+        self.cert_decision
+            .lock()
+            .unwrap()
+            .unwrap_or(TrustDecision::Reject)
     }
 
     async fn host_key(&self, request: HostKeyPrompt) -> TrustDecision {

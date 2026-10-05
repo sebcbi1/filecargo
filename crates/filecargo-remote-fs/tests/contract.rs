@@ -376,6 +376,7 @@ mod network {
         let prompter = TestPrompter::new();
         prompter.trust(TrustDecision::TrustOnce);
         prompter.answer(&[password], false);
+        prompter.trust_cert(TrustDecision::TrustOnce);
         let mut ctx = ConnectContext::new(
             Paths::from_override(Some(dir.path().join("cfg"))),
             Arc::new(MemoryStore::new()),
@@ -420,7 +421,24 @@ mod network {
         ftp_fixture_on(2123).await
     }
 
+    async fn ftps_fixture_on(protocol: Protocol, port: u16) -> Fixture {
+        let mut site = Site::new("docker-ftps", protocol, "127.0.0.1");
+        site.port = Some(port);
+        site.user = "ftpuser".to_owned();
+        fixture_for(site, "ftppass").await
+    }
+
+    async fn ftps_explicit_fixture() -> Fixture {
+        ftps_fixture_on(Protocol::FtpsExplicit, 2121).await
+    }
+
+    async fn ftps_implicit_fixture() -> Fixture {
+        ftps_fixture_on(Protocol::FtpsImplicit, 9990).await
+    }
+
     contract_suite!(sftp, sftp_fixture);
     contract_suite!(ftp, ftp_fixture);
     contract_suite!(ftp_list, ftp_list_fixture);
+    contract_suite!(ftps_explicit, ftps_explicit_fixture);
+    contract_suite!(ftps_implicit, ftps_implicit_fixture);
 }

@@ -122,6 +122,9 @@ mod tests {
                 remember: true,
             })
         }
+        async fn certificate(&self, _: crate::CertificatePrompt) -> TrustDecision {
+            TrustDecision::Reject
+        }
         async fn host_key(&self, _: HostKeyPrompt) -> TrustDecision {
             TrustDecision::Reject
         }
@@ -204,6 +207,9 @@ mod tests {
         impl Prompter for Cancel {
             async fn credential(&self, _: CredentialPrompt) -> Option<CredentialAnswer> {
                 None
+            }
+            async fn certificate(&self, _: crate::CertificatePrompt) -> TrustDecision {
+                TrustDecision::Reject
             }
             async fn host_key(&self, _: HostKeyPrompt) -> TrustDecision {
                 TrustDecision::Reject

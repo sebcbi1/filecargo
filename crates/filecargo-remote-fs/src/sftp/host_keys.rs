@@ -112,6 +112,9 @@ mod tests {
         async fn credential(&self, _: CredentialPrompt) -> Option<CredentialAnswer> {
             None
         }
+        async fn certificate(&self, _: crate::CertificatePrompt) -> TrustDecision {
+            TrustDecision::Reject
+        }
         async fn host_key(&self, request: HostKeyPrompt) -> TrustDecision {
             self.asked.lock().unwrap().push(request);
             self.decision

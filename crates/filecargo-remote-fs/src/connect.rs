@@ -57,6 +57,11 @@ pub struct ConnectContext {
     /// ssh-agent socket (unix) or pipe (Windows) path. `None` means `SSH_AUTH_SOCK` / the
     /// platform default; tests point it at their own agent.
     pub agent_socket: Option<PathBuf>,
+    /// Whether FTPS data connections may resume the control connection's TLS session
+    /// (default `true`). Servers that require reuse (ProFTPD, vsftpd's default, FileZilla
+    /// Server) only work with it; turning it off makes them fail with
+    /// [`FsError::TlsSessionReuseRequired`], which is how that path is tested.
+    pub tls_session_resumption: bool,
 }
 
 impl ConnectContext {
@@ -69,6 +74,7 @@ impl ConnectContext {
             timeouts: ConnectionSettings::default(),
             user_known_hosts: std::env::home_dir().map(|h| h.join(".ssh").join("known_hosts")),
             agent_socket: None,
+            tls_session_resumption: true,
         }
     }
 }
@@ -109,22 +115,19 @@ pub async fn connect(site: &Site, ctx: &ConnectContext) -> Result<Session, Conne
                 fs: Arc::new(sftp),
             })
         }
-        Protocol::Ftp => {
+        Protocol::Ftp | Protocol::FtpsExplicit | Protocol::FtpsImplicit => {
             let ftp = crate::ftp::open(site, ctx).await?;
             let home = ftp.home().await?;
             Ok(Session {
                 info: SessionInfo {
                     protocol: site.protocol,
                     banner: None,
-                    tls: None,
+                    tls: ftp.tls_summary(),
                     home,
                 },
                 shell: None,
                 fs: Arc::new(ftp),
             })
         }
-        Protocol::FtpsExplicit | Protocol::FtpsImplicit => Err(ConnectError::Fs(
-            FsError::Unsupported("FTPS (not implemented yet)"),
-        )),
     }
 }

@@ -12,6 +12,7 @@ use tokio::sync::{Mutex, MutexGuard};
 
 use super::time::format_timestamp;
 use super::{list, mlsd};
+use crate::tls::TlsInfo;
 use crate::{Capabilities, Entry, EntryKind, FsError, Progress, RemoteFs, RemotePath};
 
 /// What `FEAT` said, upper-cased.
@@ -43,6 +44,7 @@ pub struct FtpFs {
     protocol: Protocol,
     pub(crate) timeout: Duration,
     keepalive: tokio::task::JoinHandle<()>,
+    tls: Option<Arc<std::sync::Mutex<TlsInfo>>>,
 }
 
 /// Exclusive use of the control connection for one call. If the future holding it is dropped
@@ -122,6 +124,19 @@ pub(crate) async fn timed<T>(
     }
 }
 
+/// A data command (`LIST`, `RETR`, `STOR`, ...) under the command timeout. If the library fails to
+/// set up the data connection's TLS, the real reason is usually the server's reply on the control
+/// connection, which the library has not read yet: see [`FtpFs::settle`].
+macro_rules! data_call {
+    ($self:ident, $op:expr, $what:expr, $call:expr) => {{
+        match tokio::time::timeout($self.timeout, $call).await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => Err($self.settle($op, error, $what).await),
+            Err(_) => Err(FsError::Timeout),
+        }
+    }};
+}
+
 /// A path as a control-connection argument. CR / LF would end the command line and start
 /// another one.
 fn arg(path: &RemotePath) -> Result<&str, FsError> {
@@ -141,6 +156,7 @@ impl FtpFs {
         protocol: Protocol,
         timeout: Duration,
         keepalive: Duration,
+        tls: Option<Arc<std::sync::Mutex<TlsInfo>>>,
     ) -> Self {
         let inner = Arc::new(Mutex::new(Inner { ftp, broken: false }));
         let keepalive = tokio::spawn(keep_alive(Arc::downgrade(&inner), keepalive, timeout));
@@ -150,6 +166,7 @@ impl FtpFs {
             protocol,
             timeout,
             keepalive,
+            tls,
         }
     }
 
@@ -177,27 +194,25 @@ impl FtpFs {
         );
         let mut op = self.begin().await?;
         let result = if self.features.has("MLSD") {
-            timed(self.timeout, path, op.ftp().mlsd(Some(path)))
-                .await
-                .map(|lines| {
-                    lines
-                        .iter()
-                        .filter_map(|l| match mlsd::parse_line(l) {
-                            mlsd::Parsed::Entry(e) => Some(e),
-                            mlsd::Parsed::Skip => None,
-                        })
-                        .collect()
-                })
+            data_call!(self, &mut op, path, op.ftp().mlsd(Some(path))).map(|lines| {
+                lines
+                    .iter()
+                    .filter_map(|l| match mlsd::parse_line(l) {
+                        mlsd::Parsed::Entry(e) => Some(e),
+                        mlsd::Parsed::Skip => None,
+                    })
+                    .collect()
+            })
         } else {
-            timed(
-                self.timeout,
+            data_call!(
+                self,
+                &mut op,
                 path,
-                op.ftp().list(Some(&format!("-a {path}"))),
+                op.ftp().list(Some(&format!("-a {path}")))
             )
-            .await
             .map(|lines| lines.iter().filter_map(|l| list::parse_line(l)).collect())
         };
-        op.finish(result)
+        op.finish(result.map_err(|e| self.data_error(e)))
     }
 }
 
@@ -365,7 +380,7 @@ impl RemoteFs for FtpFs {
         let result = self
             .download_inner(&mut op, argument, offset, sink, progress)
             .await;
-        op.finish(result)
+        op.finish(result.map_err(|e| self.data_error(e)))
     }
 
     async fn upload(
@@ -381,7 +396,7 @@ impl RemoteFs for FtpFs {
         let result = self
             .upload_inner(&mut op, argument, offset, source, progress)
             .await;
-        op.finish(result)
+        op.finish(result.map_err(|e| self.data_error(e)))
     }
 
     async fn close(&self) {
@@ -415,7 +430,7 @@ impl FtpFs {
                 .map_err(|_| FsError::Unsupported("offsets beyond usize"))?;
             timed(self.timeout, path, op.ftp().resume_transfer(at)).await?;
         }
-        let mut stream = timed(self.timeout, path, op.ftp().retr_as_stream(path)).await?;
+        let mut stream = data_call!(self, &mut *op, path, op.ftp().retr_as_stream(path))?;
         let mut buf = vec![0u8; CHUNK];
         let mut total = 0u64;
         loop {
@@ -452,7 +467,7 @@ impl FtpFs {
         progress: &dyn Progress,
     ) -> Result<u64, FsError> {
         let mut stream = if offset == 0 {
-            timed(self.timeout, path, op.ftp().put_with_stream(path)).await?
+            data_call!(self, &mut *op, path, op.ftp().put_with_stream(path))?
         } else {
             let size = timed(self.timeout, path, op.ftp().size(path)).await?;
             if size as u64 != offset {
@@ -461,7 +476,7 @@ impl FtpFs {
                     message: format!("cannot resume at {offset}: remote file is {size} bytes"),
                 });
             }
-            timed(self.timeout, path, op.ftp().append_with_stream(path)).await?
+            data_call!(self, &mut *op, path, op.ftp().append_with_stream(path))?
         };
         let mut buf = vec![0u8; CHUNK];
         let mut total = 0u64;
@@ -519,5 +534,77 @@ async fn keep_alive(inner: Weak<Mutex<Inner>>, every: Duration, timeout: Duratio
             tracing::warn!(target: "filecargo::protocol", "FTP keepalive failed; the connection is dead");
             return;
         }
+    }
+}
+
+impl FtpFs {
+    /// `TLS 1.3, TLS13_AES_256_GCM_SHA384` for FTPS sessions, `None` for plain FTP.
+    pub(crate) fn tls_summary(&self) -> Option<String> {
+        let info = self.tls.as_ref()?.lock().unwrap_or_else(|e| e.into_inner());
+        info.control.clone()
+    }
+
+    /// A data connection that cannot be set up on an FTPS session usually means the server
+    /// demands TLS session reuse, which the FTP library cannot do (suppaftp #93). Reply codes
+    /// 522 / 534, or a TLS failure before any data connection ever resumed the session, are
+    /// reported as such.
+    fn data_error(&self, error: FsError) -> FsError {
+        let Some(tls) = &self.tls else { return error };
+        let (resumed_before, had_full_data_handshake) = {
+            let info = tls.lock().unwrap_or_else(|e| e.into_inner());
+            (info.data_resumed > 0, info.data_full > 0)
+        };
+        match &error {
+            FsError::Protocol {
+                code: Some(522 | 534),
+                ..
+            } => FsError::TlsSessionReuseRequired,
+            FsError::Protocol { message, .. } | FsError::Disconnected(message)
+                if !resumed_before && mentions_session_reuse(message) =>
+            {
+                FsError::TlsSessionReuseRequired
+            }
+            FsError::Disconnected(message) if !resumed_before && message.starts_with("TLS:") => {
+                FsError::TlsSessionReuseRequired
+            }
+            // ProFTPD answers 425 / 426 after the data handshake when it was not a resumption.
+            FsError::Disconnected(message)
+                if !resumed_before
+                    && had_full_data_handshake
+                    && message.starts_with("data connection: 42") =>
+            {
+                FsError::TlsSessionReuseRequired
+            }
+            _ => error,
+        }
+    }
+}
+
+fn mentions_session_reuse(message: &str) -> bool {
+    let lowered = message.to_ascii_lowercase();
+    lowered.contains("session reuse")
+        || lowered.contains("session resumption")
+        || lowered.contains("reuse")
+        || lowered.contains("cached tls session")
+}
+
+impl FtpFs {
+    /// Turns a failed data command into the best error. The library starts the data
+    /// connection's TLS handshake *before* it reads the server's reply to the command, so when
+    /// the server refuses the command (`550 no such file`) it never starts TLS, the handshake
+    /// fails, and the actual reply is still unread. Read it and report that instead.
+    async fn settle(&self, op: &mut Op<'_>, error: FtpError, what: &str) -> FsError {
+        if matches!(error, FtpError::SecureError(_)) {
+            let pending = tokio::time::timeout(
+                Duration::from_secs(2),
+                op.ftp()
+                    .read_response_in(&[Status::AboutToSend, Status::AlreadyOpen]),
+            )
+            .await;
+            if let Ok(Err(reply @ FtpError::UnexpectedResponse(_))) = pending {
+                return map_ftp(&reply, what);
+            }
+        }
+        map_ftp(&error, what)
     }
 }

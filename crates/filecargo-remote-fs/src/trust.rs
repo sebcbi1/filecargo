@@ -15,6 +15,7 @@ pub struct SessionTrust {
 struct Inner {
     credentials: HashMap<SecretKey, SecretString>,
     host_keys: HashSet<(String, u16, String)>,
+    certs: HashSet<(String, u16, String)>,
 }
 
 impl std::fmt::Debug for SessionTrust {
@@ -63,6 +64,22 @@ impl SessionTrust {
         self.lock()
             .host_keys
             .insert((host.to_owned(), port, fingerprint.to_owned()));
+    }
+
+    /// FTPS leaf certificates (hex SHA-256) accepted with *Trust once* for `host:port`.
+    pub fn trusted_certs(&self, host: &str, port: u16) -> Vec<String> {
+        self.lock()
+            .certs
+            .iter()
+            .filter(|(h, p, _)| h == host && *p == port)
+            .map(|(_, _, sha)| sha.clone())
+            .collect()
+    }
+
+    pub fn trust_cert(&self, host: &str, port: u16, sha256: &str) {
+        self.lock()
+            .certs
+            .insert((host.to_owned(), port, sha256.to_owned()));
     }
 }
 

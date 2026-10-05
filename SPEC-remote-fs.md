@@ -124,6 +124,7 @@ pub struct ConnectContext {
     pub timeouts: ConnectionSettings,          // connect timeout, keepalive
     pub user_known_hosts: Option<PathBuf>,     // OpenSSH known_hosts, read-only; None disables
     pub agent_socket: Option<PathBuf>,         // ssh-agent socket / pipe; None = SSH_AUTH_SOCK / platform default
+    pub tls_session_resumption: bool,          // FTPS data connections may resume the control TLS session (default true)
 }
 
 pub struct Session {

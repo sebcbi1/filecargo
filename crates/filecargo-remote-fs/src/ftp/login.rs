@@ -8,6 +8,7 @@ use suppaftp::{FtpError, Status};
 
 use super::fs::{Features, FtpFs};
 use crate::credentials::{self, password_prompt};
+use crate::tls::{self, SiteTls};
 use crate::{ConnectContext, ConnectError};
 
 fn auth_failed(method: &str) -> ConnectError {
@@ -35,6 +36,7 @@ fn connect_error(error: &FtpError, host: &str, port: u16) -> ConnectError {
         FtpError::ConnectionError(io) if io.kind() == std::io::ErrorKind::TimedOut => {
             ConnectError::Timeout
         }
+        FtpError::SecureError(message) => ConnectError::Tls(message.clone()),
         other => ConnectError::Network(other.to_string()),
     }
 }
@@ -73,7 +75,7 @@ pub(crate) async fn open(site: &Site, ctx: &ConnectContext) -> Result<FtpFs, Con
         tracing::warn!(target: "filecargo::protocol", site = %site.name, "plain FTP: the password travels in clear text");
     }
     tracing::info!(target: "filecargo::protocol", site = %site.name, host, port, "connecting over FTP");
-    let mut ftp = tcp_ftp(&host, port, timeout).await?;
+    let (mut ftp, site_tls) = establish(site, ctx, &host, port, timeout).await?;
     tracing::debug!(target: "filecargo::protocol", "connected; welcome: {:?}", ftp.get_welcome_msg());
 
     match &site.auth {
@@ -138,5 +140,94 @@ pub(crate) async fn open(site: &Site, ctx: &ConnectContext) -> Result<FtpFs, Con
         ftp.set_passive_nat_workaround(true);
     }
     let keepalive = Duration::from_secs(u64::from(ctx.timeouts.keepalive_secs.max(1)));
-    Ok(FtpFs::new(ftp, features, site.protocol, timeout, keepalive))
+    let tls_info = site_tls.map(|t| t.info.clone());
+    Ok(FtpFs::new(
+        ftp,
+        features,
+        site.protocol,
+        timeout,
+        keepalive,
+        tls_info,
+    ))
+}
+
+/// One connection attempt, TLS included (explicit: `AUTH TLS`; implicit: handshake first),
+/// without logging in.
+async fn connect_once(
+    site: &Site,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+    tls: Option<&SiteTls>,
+) -> Result<AsyncRustlsFtpStream, ConnectError> {
+    let secure = |e: FtpError| connect_error(&e, host, port);
+    match (site.protocol, tls) {
+        (Protocol::FtpsExplicit, Some(tls)) => {
+            let ftp = tcp_ftp(host, port, timeout).await?;
+            tokio::time::timeout(timeout, ftp.into_secure(tls.connector(), host))
+                .await
+                .map_err(|_| ConnectError::Timeout)?
+                .map_err(secure)
+        }
+        (Protocol::FtpsImplicit, Some(tls)) => {
+            let mut last = None;
+            for addr in resolve(host, port).await? {
+                let attempt = tokio::time::timeout(
+                    timeout,
+                    AsyncRustlsFtpStream::connect_secure_implicit(addr, tls.connector(), host),
+                )
+                .await;
+                match attempt {
+                    Ok(Ok(mut ftp)) => {
+                        // The library does not announce data protection in implicit mode.
+                        for command in ["PBSZ 0", "PROT P"] {
+                            tracing::debug!(target: "filecargo::protocol", "> {command}");
+                            ftp.custom_command(command, &[Status::CommandOk])
+                                .await
+                                .map_err(secure)?;
+                        }
+                        return Ok(ftp);
+                    }
+                    Ok(Err(e)) => last = Some(e),
+                    Err(_) => return Err(ConnectError::Timeout),
+                }
+            }
+            Err(last.map_or_else(
+                || ConnectError::Network("no address worked".to_owned()),
+                secure,
+            ))
+        }
+        _ => tcp_ftp(host, port, timeout).await,
+    }
+}
+
+/// Connects (and secures) the control connection. When the platform rejects the server's
+/// certificate, asks the user once and reconnects with that exact certificate accepted.
+async fn establish(
+    site: &Site,
+    ctx: &ConnectContext,
+    host: &str,
+    port: u16,
+    timeout: Duration,
+) -> Result<(AsyncRustlsFtpStream, Option<SiteTls>), ConnectError> {
+    if site.protocol == Protocol::Ftp {
+        let ftp = connect_once(site, host, port, timeout, None).await?;
+        return Ok((ftp, None));
+    }
+    let mut pinned = tls::pinned_for(ctx, host, port)?;
+    let mut asked = false;
+    loop {
+        let site_tls = SiteTls::new(pinned.clone(), ctx.tls_session_resumption)?;
+        match connect_once(site, host, port, timeout, Some(&site_tls)).await {
+            Ok(ftp) => return Ok((ftp, Some(site_tls))),
+            Err(error) => match site_tls.take_failure() {
+                Some(failure) if !asked => {
+                    tls::ask(ctx, host, port, &failure).await?;
+                    pinned.insert(failure.sha256);
+                    asked = true;
+                }
+                _ => return Err(error),
+            },
+        }
+    }
 }
