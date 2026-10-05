@@ -44,7 +44,7 @@ async fn setup(cx: &mut TestAppContext) -> (support::Harness, tempfile::TempDir,
     // open the folder by clicking its row
     cx.update_window(h.window.into(), |_, window, cx| {
         window.render_frame(cx);
-        window.click(0usize, cx);
+        window.within("server-tree").click(0usize, cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -56,7 +56,7 @@ async fn the_tree_shows_folders_and_sites_and_a_click_selects_a_row(cx: &mut Tes
     let (h, _served, prod) = setup(cx).await;
     cx.update_window(h.window.into(), |_, window, cx| {
         window.render_frame(cx);
-        window.click(1usize, cx);
+        window.within("server-tree").click(1usize, cx);
     })
     .unwrap();
     cx.run_until_parked();
@@ -72,7 +72,7 @@ async fn double_clicking_a_site_connects_and_the_remote_pane_lists_the_server(
     let (h, _served, prod) = setup(cx).await;
     cx.update_window(h.window.into(), |_, window, cx| {
         window.render_frame(cx);
-        window.double_click(1usize, cx);
+        window.within("server-tree").double_click(1usize, cx);
     })
     .unwrap();
     h.wait_state(cx, "the session", move |s| {
@@ -104,7 +104,7 @@ async fn the_toolbar_connects_the_selected_site_and_disconnects(cx: &mut TestApp
     let (h, _served, prod) = setup(cx).await;
     cx.update_window(h.window.into(), |_, window, cx| {
         window.render_frame(cx);
-        window.click(1usize, cx); // select prod
+        window.within("server-tree").click(1usize, cx); // select prod
     })
     .unwrap();
     cx.run_until_parked();
@@ -135,7 +135,7 @@ async fn deleting_a_site_updates_the_tree_and_clears_the_selection(cx: &mut Test
     let (h, _served, prod) = setup(cx).await;
     cx.update_window(h.window.into(), |_, window, cx| {
         window.render_frame(cx);
-        window.click(1usize, cx);
+        window.within("server-tree").click(1usize, cx);
     })
     .unwrap();
     cx.run_until_parked();

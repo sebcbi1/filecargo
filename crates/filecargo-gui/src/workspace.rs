@@ -11,6 +11,7 @@ use gpui_kit::{
     Render, Styled as _, Subscription, Window, div, px,
 };
 
+use crate::bottom::BottomPanel;
 use crate::model::AppModel;
 use crate::notices::NoticeHost;
 use crate::pane::FilePaneView;
@@ -25,6 +26,7 @@ pub struct Workspace {
     pub tree: Entity<ServerTreeView>,
     pub local: Entity<FilePaneView>,
     pub remote: Entity<FilePaneView>,
+    pub bottom: Entity<BottomPanel>,
     _prompts: Entity<PromptHost>,
     _notices: Entity<NoticeHost>,
     /// How many times the view drew (tests use it to see that a snapshot re-rendered).
@@ -38,6 +40,7 @@ impl Workspace {
         let tree = cx.new(|cx| ServerTreeView::new(model.clone(), cx));
         let local = cx.new(|cx| FilePaneView::new(PaneId::Local, model.clone(), window, cx));
         let remote = cx.new(|cx| FilePaneView::new(PaneId::Remote, model.clone(), window, cx));
+        let bottom = cx.new(|cx| BottomPanel::new(model.clone(), window, cx));
         let _prompts = cx.new(|cx| PromptHost::new(model.clone(), window, cx));
         let _notices = cx.new(|cx| NoticeHost::new(model.clone(), window, cx));
         // every new snapshot re-renders the workspace
@@ -49,27 +52,13 @@ impl Workspace {
             tree,
             local,
             remote,
+            bottom,
             _prompts,
             _notices,
             renders: 0,
             _observe,
             _observe_tree,
         }
-    }
-
-    fn area(title: &str, cx: &Context<Self>) -> gpui_kit::Div {
-        v_flex()
-            .size_full()
-            .border_1()
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .text_sm()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(title.to_owned()),
-            )
     }
 
     /// The site the buttons act on: the one selected in the tree.
@@ -175,6 +164,48 @@ impl Workspace {
                         crate::dialogs::settings::open(this.model.clone(), window, cx);
                     })),
             )
+            .child(
+                Button::new("upload")
+                    .small()
+                    .icon(gpui_kit::assets::IconName::Upload)
+                    .label("Upload")
+                    .disabled(!connected)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.local
+                            .update(cx, |pane, cx| pane.transfer_selection(cx));
+                    })),
+            )
+            .child(
+                Button::new("download")
+                    .small()
+                    .icon(gpui_kit::assets::IconName::Download)
+                    .label("Download")
+                    .disabled(!connected)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.remote
+                            .update(cx, |pane, cx| pane.transfer_selection(cx));
+                    })),
+            )
+            .child(
+                Button::new("pause")
+                    .small()
+                    .icon(if state.queue.processing {
+                        IconName::Pause
+                    } else {
+                        IconName::Play
+                    })
+                    .label(if state.queue.processing {
+                        "Pause transfers"
+                    } else {
+                        "Resume transfers"
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let processing = this.model.read(cx).state.queue.processing;
+                        this.model
+                            .read(cx)
+                            .send(Command::QueueSetProcessing(!processing));
+                    })),
+            )
             .child(div().flex_1())
             .child(
                 div()
@@ -196,7 +227,11 @@ impl Render for Workspace {
             .child(self.tree.clone());
         let local = self.local.clone();
         let remote = self.remote.clone();
-        let bottom = Self::area("Queue", cx);
+        let bottom = v_flex()
+            .size_full()
+            .border_1()
+            .border_color(cx.theme().border)
+            .child(self.bottom.clone());
         let columns = h_resizable("columns")
             .child(
                 resizable_panel()
@@ -231,7 +266,8 @@ impl Render for Workspace {
 
 /// The key bindings of the whole application.
 pub fn bind_keys(cx: &mut gpui_kit::App) {
-    use crate::pane::{OpenRow, ParentDir, RefreshPane, SelectAllRows};
+    use crate::bottom::RemoveItem;
+    use crate::pane::{OpenRow, ParentDir, RefreshPane, SelectAllRows, TransferSelection};
     use crate::tree::{DeleteSelected, EditSelected, RenameSelected};
     use gpui_kit::KeyBinding;
     cx.bind_keys([
@@ -241,6 +277,8 @@ pub fn bind_keys(cx: &mut gpui_kit::App) {
         KeyBinding::new("backspace", ParentDir, Some("FilePane")),
         KeyBinding::new("secondary-a", SelectAllRows, Some("FilePane")),
         KeyBinding::new("secondary-r", RefreshPane, Some("FilePane")),
+        KeyBinding::new("f5", TransferSelection, Some("FilePane")),
+        KeyBinding::new("delete", RemoveItem, Some("Queue")),
         KeyBinding::new("f2", RenameSelected, Some("ServerTree")),
         KeyBinding::new("delete", DeleteSelected, Some("ServerTree")),
         KeyBinding::new("secondary-e", EditSelected, Some("ServerTree")),

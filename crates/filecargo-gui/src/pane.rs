@@ -23,7 +23,13 @@ use crate::model::AppModel;
 
 gpui_kit::actions!(
     filecargo_pane,
-    [OpenRow, ParentDir, SelectAllRows, RefreshPane]
+    [
+        OpenRow,
+        ParentDir,
+        SelectAllRows,
+        RefreshPane,
+        TransferSelection
+    ]
 );
 
 /// The pane's listing as the app published it, reduced to what the table needs.
@@ -428,8 +434,8 @@ impl FilePaneView {
                 pane: self.pane,
                 path: entry.name,
             }),
-            // files are transferred to the other side (T6)
-            Some(_) => {}
+            // a file is sent to the other side, like FileZilla's double-click
+            Some(entry) => self.transfer_names(vec![entry.name], cx),
         }
     }
 
@@ -480,6 +486,9 @@ impl Render for FilePaneView {
                 });
             }))
             .on_action(cx.listener(|this, _: &RefreshPane, _, cx| this.refresh(cx)))
+            .on_action(
+                cx.listener(|this, _: &TransferSelection, _, cx| this.transfer_selection(cx)),
+            )
             .child(
                 div()
                     .p_1()
@@ -534,5 +543,32 @@ impl FilePaneView {
                 .unwrap_or(0o644)
         };
         crate::dialogs::permissions::open(self.model.clone(), names, mode, window, cx);
+    }
+}
+
+impl FilePaneView {
+    /// Uploads from the local pane, downloads from the remote one.
+    fn transfer_names(&mut self, names: Vec<String>, cx: &mut Context<Self>) {
+        if names.is_empty() {
+            return;
+        }
+        let command = match self.pane {
+            PaneId::Local => Command::Upload { names },
+            PaneId::Remote => Command::Download { names },
+        };
+        self.model.read(cx).send(command);
+    }
+
+    /// Sends the selection (or the row under the cursor) to the other side.
+    pub fn transfer_selection(&mut self, cx: &mut Context<Self>) {
+        let names = self.target_names(cx);
+        if names.is_empty() {
+            return;
+        }
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().selected.clear();
+            cx.notify();
+        });
+        self.transfer_names(names, cx);
     }
 }

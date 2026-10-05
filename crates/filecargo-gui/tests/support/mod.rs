@@ -44,6 +44,7 @@ pub fn open(cx: &mut TestAppContext) -> Harness {
 pub fn open_with(cx: &mut TestAppContext, options: impl FnOnce(&mut StartOptions)) -> Harness {
     let (app, config) = start_app(options);
     cx.update(gpui_kit::init);
+    cx.update(filecargo_gui::workspace::bind_keys);
     // dialogs and notifications animate on the wall clock; skip the animation in tests
     cx.update(|cx| cx.set_reduce_motion(true));
     let handle = app.clone();
