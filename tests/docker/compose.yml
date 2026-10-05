@@ -1,0 +1,47 @@
+# Test servers for `cargo it`. Everything here is throwaway: the keys, certs and passwords are
+# committed on purpose and used nowhere else. See README.md.
+name: filecargo-test
+services:
+  sftp:
+    image: lscr.io/linuxserver/openssh-server@sha256:46f115de7c251558297e7e87566fc3fc08544b63e55502b5cf294454db5d29d1
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      USER_NAME: fcuser
+      USER_PASSWORD: fcpass
+      PASSWORD_ACCESS: "true"
+      SUDO_ACCESS: "false"
+      PUBLIC_KEY_FILE: /keys/authorized_keys
+    volumes:
+      - ./keys/authorized_keys:/keys/authorized_keys:ro
+    ports: ["2222:2222"]
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2222"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  ftp:
+    build: ./proftpd
+    environment: { CONF: explicit.conf }
+    volumes: ["./certs:/certs:ro"]
+    ports: ["2121:2121", "30000-30009:30000-30009"]
+    healthcheck: &ftp-health
+      test: ["CMD-SHELL", "nc -w1 127.0.0.1 $$(awk '/^Port/{print $$2}' /etc/proftpd/$$CONF) </dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  ftps-implicit:
+    build: ./proftpd
+    environment: { CONF: implicit.conf }
+    volumes: ["./certs:/certs:ro"]
+    ports: ["9990:9990", "30010-30019:30010-30019"]
+    healthcheck: *ftp-health
+
+  ftps-reuse:
+    build: ./proftpd
+    environment: { CONF: reuse.conf }
+    volumes: ["./certs:/certs:ro"]
+    ports: ["2122:2122", "30020-30029:30020-30029"]
+    healthcheck: *ftp-health

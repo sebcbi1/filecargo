@@ -26,3 +26,19 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test
+
+  integration:
+    name: integration (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jdx/mise-action@v2
+      - uses: Swatinem/rust-cache@v2
+      - run: docker compose -f tests/docker/compose.yml up -d --build --wait
+      - run: cargo it
+        env:
+          FILECARGO_CONTRACT_ENTRIES: "2000"
+      - if: failure()
+        run: docker compose -f tests/docker/compose.yml logs
+      - if: always()
+        run: docker compose -f tests/docker/compose.yml down

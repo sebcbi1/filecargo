@@ -16,7 +16,7 @@
 - **Files:** `src/local.rs`, `tests/contract.rs`, `tests/support/mod.rs`
 
 ### T3: Docker test servers + CI (M)
-`tests/docker/compose.yml`, `tests/docker/vsftpd/{Dockerfile,explicit.conf,implicit.conf,reuse.conf}`, OpenSSH service (users, password, key, encrypted key), committed throwaway keys/certs + a `tests/docker/README.md` (how to regenerate, `orb start`), `.cargo/config.toml` alias `it`, CI job `integration` on ubuntu (compose up `--wait`, `cargo it`, compose logs on failure).
+`tests/docker/compose.yml`, `tests/docker/proftpd/{Dockerfile,explicit.conf,implicit.conf,reuse.conf}`, OpenSSH service (users, password, key, encrypted key), committed throwaway keys/certs + a `tests/docker/README.md` (how to regenerate, `orb start`), `.cargo/config.toml` alias `it`, CI job `integration` on ubuntu (compose up `--wait`, `cargo it`, compose logs on failure).
 - **Accept:** all four services healthy locally and in CI; `ssh -p 2222` and `openssl s_client -starttls ftp -connect localhost:2121` work manually.
 - **Verify:** `docker compose ... up -d --wait`; `actionlint`; CI run green
 - **Files:** `tests/docker/**`, `.cargo/config.toml`, `.github/workflows/ci.yml`

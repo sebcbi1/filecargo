@@ -23,7 +23,7 @@ and phase 2 unblocks `terminal`.
 | **Own MLSD parser, library LIST parsers with name-only fallback** | The library's MLSD parser rejects real-world lines (verified); entries must never vanish. |
 | **TLS: `Pinning` verifier wrapping `rustls-platform-verifier`**, a two-pass handshake for prompts | rustls verification is synchronous; record the failure, prompt asynchronously, reconnect with the pin. |
 | **known_hosts: russh helpers; filecargo writes only `<data>/known_hosts`** | Never modifies the user's OpenSSH files. Parser limits only cost an extra prompt. |
-| **Test servers in Docker** (OpenSSH image + an in-repo Alpine vsftpd image with 3 configs) | Reproducible locally (OrbStack) and on Linux CI; covers explicit, implicit and reuse-required FTPS. |
+| **Test servers in Docker** (OpenSSH image + an in-repo Alpine ProFTPD image with 3 configs) | Reproducible locally (OrbStack) and on Linux CI; covers explicit, implicit and reuse-required FTPS. |
 
 ### Dependencies (new, pinned in `[workspace.dependencies]`)
 `async-trait`, `tokio` (net, io-util, sync, time, rt, macros, fs), `russh =0.64.1` (try `default-features = false` + `ring`),
@@ -45,7 +45,7 @@ T3 docker servers + CI integration job ─────────────�
 ### Phase 1: Foundation
 - [x] T1: Crate, `RemotePath` (+ proptest), `Entry`, `FsError`, `Capabilities`, `Progress`, `RemoteFs` with `remove_all` (M)
 - [ ] T2: `local::read_dir` / `stat`, `RootedFs`, contract suite macro, green on `RootedFs` (M)
-- [ ] T3: Docker test servers (OpenSSH + vsftpd image, 3 configs, keys/certs), `cargo it` alias, CI `integration` job (M)
+- [x] T3: Docker test servers (OpenSSH + ProFTPD image, 3 configs, keys/certs), `cargo it` alias, CI `integration` job (M)
 ### Checkpoint A: trait and contract suite reviewed; containers healthy locally and in CI
 ### Phase 2: SFTP
 - [ ] T4: Connect plumbing (`ConnectContext`, `Prompter`, `SessionTrust`, `Session`, `ConnectError`), SFTP transport + host-key verification (M)
@@ -84,3 +84,18 @@ None. Owner/group names (only via SFTP `longname` parsing) are deferred: `Entry.
 
 ## Hand-off Notes
 _Appended per task during implementation._
+
+### T1 Types and trait (done)
+- `RemotePath` normalizes (`//`, `.`, trailing `/`, `a/../b`) and rejects relative paths, NUL and a `..` above the root; `join` takes one component only. `NoProgress` added next to `Progress`. `remove_all` never follows symlinks.
+
+### T2 Local + RootedFs + contract suite (done)
+- `RootedFs::new(root)` canonicalizes the root. Every op resolves paths under it; an existing parent chain (and the final component for ops that follow links: list, download, upload, chmod, set_modified) must stay inside the root, else `PermissionDenied`.
+- `tests/contract.rs`: scenarios are plain async fns; `contract_suite!(module, setup_fn)` instantiates all 17 for a backend. New backends add one fixture fn + one macro line. `FILECARGO_CONTRACT_ENTRIES` overrides the 10,000-entry listing. `tests/support/mod.rs` holds `sample_bytes` / `sha256_hex`.
+- `RootedFs` reports `Protocol::Sftp` (the enum has no local variant); it is a test double only.
+
+### T3 Docker test servers (done)
+- **Deviation:** vsftpd was replaced by **ProFTPD** (Alpine 3.21, `proftpd-mod_tls`). vsftpd 3.0.5 (Alpine) and 3.0.3 (Debian bookworm) both lose their listener after the first completed TLS session on this host (exit 139 / dropped connections), however it is configured. Spec table updated.
+- ProFTPD: explicit = `TLSRequired off` + `NoSessionReuseRequired`; implicit = `UseImplicitSSL` (the option `UseImplicit` does not exist); reuse server = default (session reuse required). `ftps-reuse` is only *verified healthy*; whether it really rejects suppaftp is checked in T10.
+- Healthchecks use `nc -w1 127.0.0.1 <port>` (busybox `nc` has no `-z`, and `localhost` resolves to ::1).
+- vsftpd config files must be root-owned: bind-mounting host files makes them exit 2; bake configs into the image.
+- `.cargo/config.toml` alias `it`; CI `integration` job added and `actionlint` clean (not yet run on GitHub).

@@ -254,12 +254,12 @@ pub mod local {
 | Service | Image | Purpose | Host ports |
 |---|---|---|---|
 | `sftp` | `lscr.io/linuxserver/openssh-server` (pinned digest) | password user + key user (plain and encrypted key), bash shell | 2222 |
-| `ftp` | `tests/docker/vsftpd/Dockerfile` (Alpine vsftpd 3.0.5), `explicit.conf` | plain + explicit TLS, `require_ssl_reuse=NO` | 2121, passive 30000–30009 |
+| `ftp` | `tests/docker/proftpd/Dockerfile` (Alpine ProFTPD 1.3.8 + mod_tls), `explicit.conf` | plain + explicit TLS, `NoSessionReuseRequired` |
 | `ftps-implicit` | same image, `implicit.conf` | implicit TLS | 9990, passive 30010–30019 |
-| `ftps-reuse` | same image, `reuse.conf` | explicit TLS, `require_ssl_reuse=YES` | 2122, passive 30020–30029 |
+| `ftps-reuse` | same image, `reuse.conf` | explicit TLS, session reuse required (ProFTPD default) | 2122, passive 30020–30029 |
 
-- Passive ranges are published 1:1, with `pasv_address=127.0.0.1` and `seccomp_sandbox=NO`.
-- **Active mode** can't work through published localhost ports (vsftpd refuses a `PORT` from
+- Passive ranges are published 1:1, with `MasqueradeAddress 127.0.0.1`. vsftpd (the first choice) was dropped: its listener process segfaults after the first completed TLS session on the dev host, on both Alpine 3.21 and Debian bookworm builds.
+- **Active mode** can't work through published localhost ports (servers refuse a `PORT` from
   behind NAT). Active-mode tests connect to the container IP and run on **Linux CI only**.
 - Throwaway keys and self-signed certs are generated into `tests/docker/` once, committed, and
   used nowhere else.
