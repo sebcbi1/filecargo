@@ -49,7 +49,7 @@ T3 docker servers + CI integration job ─────────────�
 ### Checkpoint A: trait and contract suite reviewed; containers healthy locally and in CI
 ### Phase 2: SFTP
 - [x] T4: Connect plumbing (`ConnectContext`, `Prompter`, `SessionTrust`, `Session`, `ConnectError`), SFTP transport + host-key verification (M)
-- [ ] T5: SFTP auth: password / keyboard-interactive with lookup order, remember and retry-once; key file incl. encrypted; agent (M)
+- [x] T5: SFTP auth: password / keyboard-interactive with lookup order, remember and retry-once; key file incl. encrypted; agent (M)
 - [ ] T6: SFTP `RemoteFs` over russh-sftp; contract suite green on docker `sftp`; keepalive (M)
 - [ ] T7: `ShellOpener` / `ShellChannel` with a draining pump and resize (S)
 ### Checkpoint B: AC3, AC4, AC7, AC8 + contract (SFTP) green
@@ -108,3 +108,10 @@ _Appended per task during implementation._
 - Hashed `|1|` known_hosts entries **are** matched by russh (HMAC-SHA1); wildcards / `@cert-authority` markers are not, and an unparsable line only costs a prompt. russh's `learn_known_hosts_path` starts a fresh file with a blank line (harmless).
 - Verified: 7 unit tests (policy with a scripted prompter) + 5 integration tests against docker `sftp` (unknown → prompt, trust always persists and the user's file stays byte-identical, once, reject, changed key refused with no prompt, refused port).
 - `tests/support` gained `TestPrompter` (scripted decisions/answers, records prompts).
+
+### T5 SFTP authentication (done)
+- `sftp::authenticate(&mut SshConnection, &Site, &ConnectContext)`. `credentials.rs` (shared with FTP later): `obtain` (attempt 0: SessionTrust → keychain if the site remembers → prompt; attempt 1: always prompt with `retry: true`), `succeeded` (typed secret goes to SessionTrust, and to the keychain only if the site *and* the user's `remember` allow), `failed` (forget the in-memory copy; the keychain entry is only replaced on success).
+- Password: `password`, then `keyboard-interactive` with the same secret **only if** the server lists it as remaining. Multi-prompt / later rounds go to `Prompter::credential(KeyboardInteractive)`; max 5 rounds. A failed round costs 1–2 server-side auth failures; with two rounds that stays under OpenSSH's `MaxAuthTries` of 6.
+- Key file: `~` expansion, `KeyIsEncrypted` → passphrase lookup, wrong passphrase retried once, then `ConnectError::KeyFile`. RSA hash via `best_supported_rsa_hash`.
+- Agent: unix `connect_uds` / `SSH_AUTH_SOCK`; Windows named pipe `\\.\pipe\openssh-ssh-agent` then Pageant (**compile-checked only in CI**). Every plain-key identity is tried; certificates are skipped.
+- **New pub field `ConnectContext::agent_socket: Option<PathBuf>`** so tests can use their own agent (the crate forbids `unsafe`, so `set_var` is out). The agent test spawns `ssh-agent`, loads a 0600 copy of `id_plain`, and skips itself when `ssh-agent` is missing.

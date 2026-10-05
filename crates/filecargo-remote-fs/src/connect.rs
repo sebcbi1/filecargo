@@ -54,6 +54,9 @@ pub struct ConnectContext {
     /// The user's OpenSSH `known_hosts`, read-only and never written. `None` disables it.
     /// [`ConnectContext::new`] points it at `~/.ssh/known_hosts`; tests override it.
     pub user_known_hosts: Option<PathBuf>,
+    /// ssh-agent socket (unix) or pipe (Windows) path. `None` means `SSH_AUTH_SOCK` / the
+    /// platform default; tests point it at their own agent.
+    pub agent_socket: Option<PathBuf>,
 }
 
 impl ConnectContext {
@@ -65,6 +68,7 @@ impl ConnectContext {
             trust: Arc::new(SessionTrust::new()),
             timeouts: ConnectionSettings::default(),
             user_known_hosts: std::env::home_dir().map(|h| h.join(".ssh").join("known_hosts")),
+            agent_socket: None,
         }
     }
 }

@@ -4,4 +4,7 @@
 mod host_keys;
 mod transport;
 
+mod auth;
+
+pub use auth::authenticate;
 pub use transport::{SshConnection, connect_ssh};

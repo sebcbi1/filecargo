@@ -123,6 +123,7 @@ pub struct ConnectContext {
     pub trust: Arc<SessionTrust>,              // in-memory, shared by every connection of the app
     pub timeouts: ConnectionSettings,          // connect timeout, keepalive
     pub user_known_hosts: Option<PathBuf>,     // OpenSSH known_hosts, read-only; None disables
+    pub agent_socket: Option<PathBuf>,         // ssh-agent socket / pipe; None = SSH_AUTH_SOCK / platform default
 }
 
 pub struct Session {
