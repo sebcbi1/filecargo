@@ -21,7 +21,7 @@ tested against an in-memory fake channel; one integration test uses the docker S
 
 ## Task List
 - [x] T1: Crate + `Key` / `Mods` / `Modes` + `encode` with xterm table tests (S)
-- [ ] T2: `spawn` + `TerminalHandle` over a fake channel: feed, generation, resize coalescing, paste (bracketed or not), scrollback + return-to-live, exit status, close (M)
+- [x] T2: `spawn` + `TerminalHandle` over a fake channel: feed, generation, resize coalescing, paste (bracketed or not), scrollback + return-to-live, exit status, close (M)
 - [ ] T3: Integration vs docker SSH: `printf`, resize + `stty size` (S)
 ### Checkpoint: all 7 AC green, coverage ≥ 80 %, human review
 
@@ -43,3 +43,11 @@ _Appended per task during implementation._
 ### T1 Key encoding (done)
 - `keys.rs`: `Key`, `Mods` (`NONE/CTRL/ALT/SHIFT` consts), `Modes`, pure `encode`. `vt100` is pinned `=0.16.2` in the workspace. The test table has ~65 rows (every variant × the modifier combinations that matter) asserted in **both** cursor modes; a compile-time exhaustiveness check forces new `Key` variants into it.
 - xterm decisions made explicit: Shift+Tab = `CSI Z`; Ctrl+Backspace = `0x08`; Ctrl+Enter/Shift+Enter = `\r`; modified cursor keys use `CSI 1;<m>X` even in application mode; F1–F4 modified = `CSI 1;<m>P..S`; `F(0)` / `F(13+)` encode to nothing; `Modes::application_keypad` is carried for the API but no `Key` is a keypad key in v1.
+
+### T2 TerminalHandle (done)
+- `handle.rs`: `spawn(channel, size, scrollback)` (inside a tokio runtime) → `TerminalHandle` over `Arc<Shared { Mutex<vt100::Parser<TermCallbacks>>, AtomicU64 generation, Mutex<TermStatus> }>`. The feeder task `select!`s output, resize changes and a deferred-resize timer; output is fed in ≤ 64 KiB chunks, each followed by a generation bump.
+- **Resize coalescing:** the parser is resized immediately; the window-change goes out at once if none was sent in the last 100 ms, otherwise one deferred send at +100 ms carries the latest size (10 resizes in 50 ms → 2 messages, the second with the final size).
+- **API deviations (spec updated):** `send_key(key, mods)` (the spec sketch lost `Mods`), plus `bell_count()` for the GUI flash; `selection_text` takes `(row, col)` ends in either order. `scroll(n)` is relative (positive = back into history), `scroll(0)` = live; typing, text and paste return to live.
+- **Paste hardening:** in bracketed mode any `ESC[201~` inside the pasted text is stripped, so pasted content cannot end the bracket early and have the rest executed as typed input. Unbracketed paste turns `\r\n` / `\n` into `\r`.
+- After `Exit(code)` the status is `Exited(code)` (a later `Closed` does not overwrite it), the screen stays readable and all input is dropped; a channel that disappears without an exit gives `Closed`.
+- 13 tests against an in-memory fake channel (AC2–AC6 plus title/bell/selection, split escape sequences, 300 KB of output, close, keys in application-cursor mode); resize tests use paused time.

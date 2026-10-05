@@ -27,15 +27,16 @@ pub struct TerminalHandle { /* Arc<Mutex<vt100::Parser>> + input sender + state 
 impl TerminalHandle {
     /// Runs `f` with the current screen. Hold the lock only while drawing.
     pub fn with_screen<R>(&self, f: impl FnOnce(&vt100::Screen) -> R) -> R;
-    pub fn send_key(&self, key: Key);                 // encoded with the screen's current modes
+    pub fn send_key(&self, key: Key, mods: Mods);    // encoded with the screen's current modes
     pub fn send_text(&self, text: &str);              // typed text (UTF-8)
     pub fn paste(&self, text: &str);                  // bracketed when the app enabled it
     pub fn resize(&self, size: TermSize);             // updates the parser and sends window-change
     pub fn scroll(&self, lines: i32);                 // into scrollback; 0 = back to live view
-    pub fn selection_text(&self, from: (u16, u16), to: (u16, u16)) -> String; // copy
+    pub fn selection_text(&self, from: (u16, u16), to: (u16, u16)) -> String; // (row, col) ends, either order; copy
     pub fn status(&self) -> TermStatus;               // Running | Exited(Option<u32>) | Closed
     pub fn generation(&self) -> u64;                  // bumps when the screen changes
     pub fn title(&self) -> String;
+    pub fn bell_count(&self) -> u64;                 // rings so far; a UI flashes when it changes
     pub fn close(&self);
 }
 
