@@ -5,4 +5,6 @@
 pub mod format;
 pub mod model;
 pub mod pane;
+pub mod toolbar;
+pub mod tree;
 pub mod workspace;

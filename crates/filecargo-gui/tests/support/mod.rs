@@ -15,6 +15,8 @@ use gpui_kit::{
     Bounds, Entity, Point, TestAppContext, WindowBounds, WindowHandle, WindowOptions, px, size,
 };
 
+pub mod factory;
+
 pub struct Harness {
     pub app: AppHandle,
     pub window: WindowHandle<Root>,

@@ -24,6 +24,8 @@ tokio.workspace = true
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 filecargo-config.workspace = true
+filecargo-remote-fs.workspace = true
+async-trait.workspace = true
 tempfile.workspace = true
 
 [lints]

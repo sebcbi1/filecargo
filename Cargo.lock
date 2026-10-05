@@ -2400,8 +2400,10 @@ name = "filecargo-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "filecargo-app-core",
  "filecargo-config",
+ "filecargo-remote-fs",
  "gpui-kit",
  "tempfile",
  "tokio",

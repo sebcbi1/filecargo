@@ -32,7 +32,7 @@ through gpui-kit, and must never be added directly.
 - [x] T2: File panes: `DataTable` delegate (columns, sort → `SetSort`, multi-select), local navigation (double-click, Enter, Backspace, path input), pane context menu (M)
 ### Checkpoint A: the binary browses the local disk; CI gui job green on ubuntu/macos/windows
 ### Phase 2: Sessions and editing
-- [ ] T3: Server tree view, connect/disconnect, remote pane, toolbar with session status (M)
+- [x] T3: Server tree view, connect/disconnect, remote pane, toolbar with session status (M)
 - [ ] T4: Dialog infrastructure, site editor, tree context-menu operations (new, rename, duplicate, move, delete, import) (M)
 - [ ] T5: Prompt dialogs for every `PromptKind`, permissions dialog, settings dialog, notices → notifications (M)
 ### Checkpoint B: connect over SFTP with host-key and password prompts, edit sites, change settings
@@ -80,3 +80,9 @@ _Appended per task during implementation._
 - `format.rs`: size / UTC time / `drwxr-xr-x` helpers (a copy of the TUI's, since front-ends share only app-core).
 - Things learned: `TableState::refresh()` resets user-resized column widths, so rows are replaced through `delegate_mut()` + `notify`; `refresh()` is only used when the sort indicator changes. Real double clicks work headless through `window.double_click(("row", n), cx)`.
 - Tests (`tests/panes.rs`, 6): listing with parent row, multi-select (plain / secondary / shift / `..`), double-click directory and `..` (AC1 iv), selection across refresh and navigation, header sort → app (AC1 v for the multi-select part), remote hint.
+
+### T3 Server tree + session (done)
+- `tree.rs` (`ServerTreeView`): gpui-kit `Tree` rebuilt from `ServerTree` whenever its `Arc` pointer changes; item ids are `folder:<uuid>` / `site:<uuid>` with a `nodes` map back to `NodeId`; the open folders are remembered from `TreeEvent::{Expanded, Collapsed}` and re-applied after `set_items` (which also resets the selection, so a vanished node is dropped from `selected`). Selection is read from the tree state after it notifies (`selected_item`), exposed as `ServerTreeView::selected`. Rows: folder icons, a green check on the connected site, a red cross on a failed one, a spinner while connecting. Double-click on a site (`ListItem::on_click`, `click_count() == 2`) → `Command::Connect`; a click on a folder row toggles it (the component's own behaviour). Context menu: *Connect* (and *Disconnect* on the connected site); more entries arrive in T4.
+- Toolbar (in `workspace.rs`, label text in `toolbar.rs`): *Connect* (enabled with a site selected and no connection in progress), *Disconnect*, *Refresh* (both panes) and the session indicator (`● name (SFTP)`, `Connecting to … (step)…`, `✗ name: error`). The workspace observes the tree entity so the buttons follow the selection. Upload / Download / New folder / Rename / Delete buttons come with their dialogs and transfers (T4–T6).
+- Tests need an app whose sessions are served from disk: `tests/support/factory.rs` is a `SessionFactory` over `RootedFs` (dev-dependencies `filecargo-remote-fs`, `async-trait`). `tests/tree.rs` (4): tree rows and selection, double-click connects and the remote pane's table lists the server (AC1 iii), toolbar connect / disconnect, deleting the selected site clears the selection.
+- Test gotcha: effects (observers) only run on `cx.run_until_parked()`, so a click that changes the selection and the click that depends on it must be in separate `update_window` calls.
