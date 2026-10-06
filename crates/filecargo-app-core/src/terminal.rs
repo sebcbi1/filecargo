@@ -5,6 +5,7 @@ use filecargo_terminal::{TermSize, TermStatus, spawn};
 
 use crate::app::{Core, Msg};
 use crate::command::Command;
+use crate::logging::site_span;
 use crate::state::{Level, TerminalState, TerminalView};
 
 const SCROLLBACK: usize = 5_000;
@@ -87,6 +88,10 @@ impl Core {
                 self.changed();
             }
             Err(error) => {
+                let _span = self
+                    .live
+                    .as_ref()
+                    .map(|live| site_span(live.site).entered());
                 tracing::warn!(target: "filecargo::app", %error, "could not open a shell");
                 self.notice(Level::Error, format!("Could not open a shell: {error}"));
             }

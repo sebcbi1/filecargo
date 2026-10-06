@@ -15,6 +15,7 @@ use tokio::time::Instant;
 
 use crate::app::{Core, Msg};
 use crate::command::Command;
+use crate::logging::site_span;
 use crate::prompt::PromptAction;
 use crate::session::SessionFactory;
 use crate::state::{Level, PromptAnswer, PromptKind};
@@ -163,6 +164,7 @@ impl Core {
                 if ok {
                     self.note_finished_into_panes(id);
                 } else if let Some(reason) = self.failure_reason(id) {
+                    let _span = self.failed_site(id).map(|site| site_span(site).entered());
                     tracing::warn!(target: "filecargo::app", %id, %reason, "a transfer failed");
                 }
             }
@@ -174,6 +176,11 @@ impl Core {
                 self.remote_refresh.request();
             }
         }
+    }
+
+    fn failed_site(&self, id: TransferId) -> Option<SiteId> {
+        let failed = &self.state.queue.failed;
+        failed.iter().find(|v| v.item.id == id).map(|v| v.item.site)
     }
 
     fn failure_reason(&self, id: TransferId) -> Option<String> {
@@ -269,6 +276,7 @@ impl Core {
             return;
         }
         if let Some(queue) = &self.queue {
+            let _span = site_span(live.site).entered();
             tracing::info!(target: "filecargo::app", count = transfers.len(), ?direction, "queueing transfers");
             queue.enqueue(transfers);
         }

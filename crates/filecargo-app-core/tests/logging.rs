@@ -50,6 +50,7 @@ fn the_ring_drops_the_oldest_lines_beyond_5000() {
             level: LogLevel::Info,
             target: "t".into(),
             message: format!("line {i}"),
+            site: None,
         });
     }
     assert_eq!(buffer.len(), 5_000);
@@ -123,4 +124,66 @@ fn lines_are_appended_to_the_log_file_when_one_is_configured() {
     assert!(text.contains("INFO  filecargo::protocol: first"), "{text}");
     assert!(text.contains("ERROR") && text.contains("second"), "{text}");
     assert_eq!(buffer.len(), 2, "the memory buffer gets the same lines");
+}
+
+fn line(site: Option<filecargo_config::SiteId>, message: &str) -> LogLine {
+    LogLine {
+        time: SystemTime::now(),
+        level: LogLevel::Info,
+        target: "t".into(),
+        message: message.into(),
+        site,
+    }
+}
+
+#[test]
+fn a_line_inside_a_site_span_carries_the_site_and_others_do_not() {
+    let site = filecargo_config::SiteId::new();
+    let buffer = LogBuffer::new();
+    with_layer(LogLayer::new(buffer.clone()), || {
+        tracing::info!("startup");
+        let span = tracing::info_span!("site", site = %site);
+        let _guard = span.enter();
+        tracing::info!("inside");
+        let nested = tracing::info_span!("job", id = 3);
+        let _nested = nested.enter();
+        tracing::info!("nested inside");
+    });
+    let lines = buffer.snapshot();
+    let sites: Vec<_> = lines.iter().map(|l| (l.message.as_str(), l.site)).collect();
+    assert_eq!(
+        sites,
+        [
+            ("startup", None),
+            ("inside", Some(site)),
+            ("nested inside", Some(site))
+        ]
+    );
+}
+
+#[test]
+fn lines_for_a_scope_are_that_sites_plus_the_app_wide_ones() {
+    let (a, b) = (
+        filecargo_config::SiteId::new(),
+        filecargo_config::SiteId::new(),
+    );
+    let buffer = LogBuffer::new();
+    for l in [
+        line(None, "app"),
+        line(Some(a), "a1"),
+        line(Some(b), "b1"),
+        line(Some(a), "a2"),
+    ] {
+        buffer.push(l);
+    }
+    let messages = |scope| -> Vec<String> {
+        buffer
+            .lines_for(scope)
+            .into_iter()
+            .map(|l| l.message)
+            .collect()
+    };
+    assert_eq!(messages(Some(a)), ["app", "a1", "a2"]);
+    assert_eq!(messages(Some(b)), ["app", "b1"]);
+    assert_eq!(messages(None), ["app"], "disconnected: app-wide only");
 }

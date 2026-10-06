@@ -13,8 +13,9 @@ use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use filecargo_config::LogLevel;
+use filecargo_config::{LogLevel, SiteId};
 use tracing::field::{Field, Visit};
+use tracing::span::{Attributes, Id};
 use tracing::{Event, Level as TracingLevel, Subscriber};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::{Context, SubscriberExt};
@@ -29,6 +30,9 @@ pub struct LogLine {
     pub level: LogLevel,
     pub target: String,
     pub message: String,
+    /// The site whose session or transfer logged this line; `None` for app-wide lines. Taken
+    /// from the nearest enclosing span that has a `site` field.
+    pub site: Option<SiteId>,
 }
 
 /// Shared by the app and the UI: the UI reads it at render time and compares
@@ -127,6 +131,18 @@ impl LogBuffer {
         self.with_lines(|lines| lines.iter().cloned().collect())
     }
 
+    /// What a panel scoped to `scope` shows: that site's lines plus the app-wide ones. With
+    /// `None` (not connected) only the app-wide lines.
+    pub fn lines_for(&self, scope: Option<SiteId>) -> Vec<LogLine> {
+        self.with_lines(|lines| {
+            lines
+                .iter()
+                .filter(|l| l.site.is_none() || l.site == scope)
+                .cloned()
+                .collect()
+        })
+    }
+
     /// Follows `settings.log.level`: events more verbose than this are dropped.
     pub fn set_level(&self, level: LogLevel) {
         self.inner.level.store(rank(level), Ordering::SeqCst);
@@ -162,6 +178,27 @@ impl Visit for Fields {
     }
 }
 
+/// The `site` field of a span, recorded when the span is created.
+#[derive(Default)]
+struct SiteField(Option<SiteId>);
+
+impl Visit for SiteField {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "site" {
+            self.0 = format!("{value:?}").parse().ok();
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "site" {
+            self.0 = value.parse().ok();
+        }
+    }
+}
+
+/// Stored in a span's extensions when it has a valid `site` field.
+struct SpanSite(SiteId);
+
 /// A `tracing` layer that feeds a [`LogBuffer`] (and optionally a file).
 pub struct LogLayer {
     buffer: LogBuffer,
@@ -187,18 +224,32 @@ impl LogLayer {
 }
 
 impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for LogLayer {
-    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+    fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
+        let mut field = SiteField::default();
+        attrs.record(&mut field);
+        if let (Some(site), Some(span)) = (field.0, ctx.span(id)) {
+            span.extensions_mut().insert(SpanSite(site));
+        }
+    }
+
+    fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let level = from_tracing(event.metadata().level());
         if !self.buffer.accepts(level) {
             return;
         }
         let mut fields = Fields::default();
         event.record(&mut fields);
+        let site = ctx.event_scope(event).and_then(|scope| {
+            scope
+                .into_iter()
+                .find_map(|span| span.extensions().get::<SpanSite>().map(|s| s.0))
+        });
         let line = LogLine {
             time: SystemTime::now(),
             level,
             target: event.metadata().target().to_owned(),
             message: format!("{}{}", fields.message, fields.extra),
+            site,
         };
         if let Some(file) = &self.file {
             let secs = line
@@ -229,4 +280,10 @@ pub fn init(buffer: &LogBuffer) -> bool {
         .with(layer)
         .try_init()
         .is_ok()
+}
+
+/// A span that tags every line logged inside it with `site`. Use it around work done for one
+/// site's session (`.instrument(...)` for tasks, `.entered()` for synchronous code).
+pub(crate) fn site_span(site: SiteId) -> tracing::Span {
+    tracing::info_span!(target: "filecargo::app", "site", site = %site)
 }

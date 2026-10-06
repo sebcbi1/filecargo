@@ -104,7 +104,7 @@ See [todo.md](todo.md) for acceptance criteria, verification and files.
 - Manual: in both UIs, mkdir/rename/delete/chmod on the local pane.
 
 ### Phase 2: Bottom panel per connection
-- [ ] T5: Log lines carry the site they belong to
+- [x] T5: Log lines carry the site they belong to
 - [ ] T6: app-core publishes the scoped queue and the count of other sites' active transfers
 - [ ] T7: TUI bottom panel is scoped, shows both paths and the other-sites hint
 - [ ] T8: GUI bottom panel is scoped, shows both paths and the other-sites hint

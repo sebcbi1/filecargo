@@ -97,13 +97,13 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - `LogBuffer::lines_for(scope: Option<SiteId>)` returns the lines of that site plus app-wide
   lines. With `None`, it returns app-wide lines only.
 **Acceptance:**
-- [ ] A line logged inside a connect is tagged with the site.
-- [ ] A line from a spawned transfer worker is tagged with the item's site.
-- [ ] A startup line is untagged.
-- [ ] `lines_for` filters correctly.
+- [x] A line logged inside a connect is tagged with the site.
+- [x] A line from a spawned transfer worker is tagged with the item's site.
+- [x] A startup line is untagged.
+- [x] `lines_for` filters correctly.
 **Verify:**
-- [ ] `cargo test -p filecargo-app-core --test logging`
-- [ ] `cargo test -p filecargo-transfer`
+- [x] `cargo test -p filecargo-app-core --test logging`
+- [x] `cargo test -p filecargo-transfer`
 **Dependencies:** none
 **Files:** `crates/filecargo-app-core/src/{logging,session}.rs`, `crates/filecargo-transfer/src/worker.rs`, `crates/filecargo-app-core/tests/logging.rs`
 **Scope:** M

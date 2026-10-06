@@ -2220,6 +2220,7 @@ mod bottom_tests {
             level: LogLevel::Info,
             target: "filecargo::test".into(),
             message: format!("line {n}"),
+            site: None,
         }
     }
 

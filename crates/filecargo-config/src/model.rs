@@ -21,6 +21,14 @@ impl Default for SiteId {
     }
 }
 
+impl std::str::FromStr for SiteId {
+    type Err = uuid::Error;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        text.parse().map(Self)
+    }
+}
+
 impl fmt::Display for SiteId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
@@ -163,4 +171,16 @@ pub struct Folder {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<FolderId>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_site_id_round_trips_through_its_text() {
+        let id = SiteId::new();
+        assert_eq!(id.to_string().parse::<SiteId>().unwrap(), id);
+        assert!("not-a-uuid".parse::<SiteId>().is_err());
+    }
 }

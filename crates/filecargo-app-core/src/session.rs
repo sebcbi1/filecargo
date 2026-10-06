@@ -7,9 +7,11 @@ use filecargo_config::{Site, SiteId};
 use filecargo_remote_fs::{
     ConnectContext, ConnectError, Entry, FsError, RemoteFs, RemotePath, Session, SessionInfo,
 };
+use tracing::Instrument as _;
 
 use crate::app::{Core, Msg};
 use crate::command::Command;
+use crate::logging::site_span;
 use crate::sort::{retain_visible, sort_entries};
 use crate::state::{ConnectStep, Level, Pane, PromptKind, SessionState, TerminalState};
 
@@ -95,51 +97,56 @@ impl Core {
         };
         self.state.remote = None;
         self.changed();
-        tracing::info!(target: "filecargo::app", site = %site.name, "connecting");
+        site_span(site_id)
+            .in_scope(|| tracing::info!(target: "filecargo::app", site = %site.name, "connecting"));
 
         let mut ctx = self.ctx.clone();
         ctx.timeouts = self.state.settings.connection.clone();
         let factory = self.factory.clone();
         let messages = self.messages.clone();
-        tokio::spawn(async move {
-            let result = async {
-                let session = factory.connect(&site, &ctx).await?;
-                let _ = messages.send(Msg::ConnectStep {
+        let span = site_span(site_id);
+        tokio::spawn(
+            async move {
+                let result = async {
+                    let session = factory.connect(&site, &ctx).await?;
+                    let _ = messages.send(Msg::ConnectStep {
+                        epoch,
+                        step: ConnectStep::Listing,
+                    });
+                    let wanted = site
+                        .remote_dir
+                        .as_deref()
+                        .and_then(|d| RemotePath::parse(d).ok());
+                    let start = match wanted {
+                        Some(dir)
+                            if session
+                                .fs
+                                .stat(&dir)
+                                .await
+                                .ok()
+                                .flatten()
+                                .is_some_and(|e| e.is_dir()) =>
+                        {
+                            dir
+                        }
+                        _ => session.info.home.clone(),
+                    };
+                    let listing = session.fs.list(&start).await;
+                    Ok(Opened {
+                        session,
+                        start,
+                        listing,
+                    })
+                }
+                .await;
+                let _ = messages.send(Msg::Connected(Connected {
                     epoch,
-                    step: ConnectStep::Listing,
-                });
-                let wanted = site
-                    .remote_dir
-                    .as_deref()
-                    .and_then(|d| RemotePath::parse(d).ok());
-                let start = match wanted {
-                    Some(dir)
-                        if session
-                            .fs
-                            .stat(&dir)
-                            .await
-                            .ok()
-                            .flatten()
-                            .is_some_and(|e| e.is_dir()) =>
-                    {
-                        dir
-                    }
-                    _ => session.info.home.clone(),
-                };
-                let listing = session.fs.list(&start).await;
-                Ok(Opened {
-                    session,
-                    start,
-                    listing,
-                })
+                    site: site.id,
+                    result,
+                }));
             }
-            .await;
-            let _ = messages.send(Msg::Connected(Connected {
-                epoch,
-                site: site.id,
-                result,
-            }));
-        });
+            .instrument(span),
+        );
         // the local pane follows the site's local directory
         if let Some(dir) = self
             .state
@@ -169,6 +176,7 @@ impl Core {
             }
             return;
         }
+        let _span = site_span(connected.site).entered();
         match connected.result {
             Ok(opened) => {
                 let Opened {
@@ -254,6 +262,7 @@ impl Core {
             let site = live.site;
             let fs = live.fs;
             tokio::spawn(async move { fs.close().await });
+            let _span = site_span(site).entered();
             tracing::warn!(target: "filecargo::app", %error, "the connection was lost");
             self.state.session = SessionState::Failed {
                 site,
@@ -273,7 +282,9 @@ impl Core {
         if let Some(site) = self.lost_site.take()
             && matches!(self.state.session, SessionState::Failed { .. })
         {
-            tracing::info!(target: "filecargo::app", "reconnecting after a lost connection");
+            site_span(site).in_scope(
+                || tracing::info!(target: "filecargo::app", "reconnecting after a lost connection"),
+            );
             self.connect(site, Some(command));
             return None;
         }
@@ -288,15 +299,19 @@ impl Core {
         self.remote_seq += 1;
         let seq = self.remote_seq;
         let fs = live.fs.clone();
+        let span = site_span(live.site);
         if let Some(pane) = self.state.remote.as_mut() {
             pane.loading = true;
         }
         self.changed();
         let messages = self.messages.clone();
-        tokio::spawn(async move {
-            let result = fs.list(&target).await.map(|entries| (target, entries));
-            let _ = messages.send(Msg::RemoteListed(RemoteListing { seq, result }));
-        });
+        tokio::spawn(
+            async move {
+                let result = fs.list(&target).await.map(|entries| (target, entries));
+                let _ = messages.send(Msg::RemoteListed(RemoteListing { seq, result }));
+            }
+            .instrument(span),
+        );
     }
 
     pub(crate) fn navigate_remote(&mut self, typed: &str) {

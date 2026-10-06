@@ -413,6 +413,7 @@ fn the_log_tab_shows_the_newest_lines_with_levels() {
             level,
             target: "filecargo::session".into(),
             message: format!("event number {n}"),
+            site: None,
         });
     }
     insta::assert_snapshot!(draw(&ui, &app));

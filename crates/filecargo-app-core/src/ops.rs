@@ -5,9 +5,11 @@
 use std::sync::Arc;
 
 use filecargo_remote_fs::{Entry, EntryKind, FsError, RemoteFs, RemotePath, local::RootedFs};
+use tracing::Instrument as _;
 
 use crate::app::{Core, Msg};
 use crate::command::Command;
+use crate::logging::site_span;
 use crate::prompt::PromptAction;
 use crate::state::{Level, PaneId, PromptKind};
 
@@ -54,9 +56,11 @@ impl Core {
         F: FnOnce(Arc<dyn RemoteFs>) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<(), FsError>> + Send + 'static,
     {
+        let mut span = tracing::Span::none();
         let fs: Arc<dyn RemoteFs> = match pane {
             PaneId::Remote => {
                 let Some(live) = &self.live else { return };
+                span = site_span(live.site);
                 live.fs.clone()
             }
             PaneId::Local => match RootedFs::new(&self.state.local.path) {
@@ -68,15 +72,20 @@ impl Core {
             },
         };
         let messages = self.messages.clone();
-        tracing::info!(target: "filecargo::app", operation = %what, ?pane, "file operation");
-        tokio::spawn(async move {
-            let outcome = op(fs).await;
-            let _ = messages.send(Msg::OpDone(OpDone {
-                pane,
-                what,
-                outcome,
-            }));
-        });
+        span.in_scope(
+            || tracing::info!(target: "filecargo::app", operation = %what, ?pane, "file operation"),
+        );
+        tokio::spawn(
+            async move {
+                let outcome = op(fs).await;
+                let _ = messages.send(Msg::OpDone(OpDone {
+                    pane,
+                    what,
+                    outcome,
+                }));
+            }
+            .instrument(span),
+        );
     }
 
     fn refresh_pane(&mut self, pane: PaneId) {
@@ -88,6 +97,11 @@ impl Core {
 
     pub(crate) fn on_op_done(&mut self, done: OpDone) {
         if let Err(error) = &done.outcome {
+            let _span = self
+                .live
+                .as_ref()
+                .filter(|_| done.pane == PaneId::Remote)
+                .map(|live| site_span(live.site).entered());
             tracing::warn!(target: "filecargo::app", operation = %done.what, %error, "file operation failed");
             self.notice(Level::Error, format!("Could not {}: {error}", done.what));
             if done.pane == PaneId::Remote && error.is_retryable() {

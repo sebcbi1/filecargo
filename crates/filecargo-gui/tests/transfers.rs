@@ -196,6 +196,7 @@ async fn the_tabs_switch_and_the_log_shows_what_the_app_logged(cx: &mut TestAppC
             level: LogLevel::Info,
             target: "test".into(),
             message: format!("line {n}"),
+            site: None,
         });
     }
     cx.update_window(e.h.window.into(), |_, window, cx| window.render_frame(cx))

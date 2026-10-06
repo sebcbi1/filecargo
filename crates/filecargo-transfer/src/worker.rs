@@ -119,6 +119,7 @@ fn from_fs(error: FsError) -> TransferError {
 }
 
 pub(crate) async fn run(job: Job) -> JobResult {
+    tracing::debug!(target: "filecargo::transfer", id = %job.item.id, direction = ?job.item.direction, "starting");
     let result = if job.item.is_dir {
         run_dir(&job).await
     } else {

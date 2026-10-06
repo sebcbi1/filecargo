@@ -9,6 +9,7 @@ use filecargo_remote_fs::RemoteFs;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::AbortHandle;
 use tokio::time::Instant;
+use tracing::Instrument as _;
 
 use crate::progress::RateTracker;
 use crate::queue::{
@@ -341,34 +342,38 @@ impl Scheduler {
         let connector = self.connector.clone();
         let done = self.done_tx.clone();
         let job_progress = progress.clone();
-        let handle = tokio::spawn(async move {
-            let fs = match pooled {
-                Some(fs) => fs,
-                None => match connector.connect(item.site).await {
-                    Ok(fs) => fs,
-                    Err(error) => {
-                        let _ = done.send(Finished {
-                            id,
-                            result: JobResult::Failed(error),
-                            conn: None,
-                        });
-                        return;
-                    }
-                },
-            };
-            let result = worker::run(Job {
-                item,
-                rule,
-                fs: fs.clone(),
-                progress: job_progress,
-            })
-            .await;
-            let _ = done.send(Finished {
-                id,
-                result,
-                conn: Some(fs),
-            });
-        });
+        let span = tracing::info_span!(target: "filecargo::transfer", "job", site = %item.site);
+        let handle = tokio::spawn(
+            async move {
+                let fs = match pooled {
+                    Some(fs) => fs,
+                    None => match connector.connect(item.site).await {
+                        Ok(fs) => fs,
+                        Err(error) => {
+                            let _ = done.send(Finished {
+                                id,
+                                result: JobResult::Failed(error),
+                                conn: None,
+                            });
+                            return;
+                        }
+                    },
+                };
+                let result = worker::run(Job {
+                    item,
+                    rule,
+                    fs: fs.clone(),
+                    progress: job_progress,
+                })
+                .await;
+                let _ = done.send(Finished {
+                    id,
+                    result,
+                    conn: Some(fs),
+                });
+            }
+            .instrument(span),
+        );
         self.active.insert(
             id,
             Running {
