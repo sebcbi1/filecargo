@@ -38,7 +38,7 @@ async fn env(cx: &mut TestAppContext) -> Env {
     h.wait_state(cx, "the site", |s| s.servers.sites().len() == 1)
         .await;
     h.app.send(Command::Connect(id));
-    let wanted = local.path().to_path_buf();
+    let wanted = support::canonical(local.path());
     h.wait_state(cx, "the session", move |s| {
         s.remote.as_ref().is_some_and(|r| !r.entries.is_empty())
             && s.local.path == wanted

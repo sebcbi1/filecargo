@@ -64,4 +64,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy -p filecargo-gui --all-targets -- -D warnings
       - run: cargo build -p filecargo-gui
-      - run: cargo test -p filecargo-gui
+      - run: cargo test -p filecargo-gui --no-fail-fast
