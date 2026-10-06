@@ -155,7 +155,7 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 **Verify:**
 - [x] `nix-shell --run "cargo test -p filecargo-gui"`
 **Dependencies:** T6
-**Files:** `crates/filecargo-gui/src/bottom/{mod,queue,log}.rs`, `crates/filecargo-gui/src/toolbar.rs`, `crates/filecargo-gui/tests/transfers.rs`
+**Files:** `crates/filecargo-gui/src/bottom/{mod,queue,log}.rs`, `crates/filecargo-gui/src/toolbar.rs`, `crates/filecargo-gui/tests/{transfers,staged_queue}.rs`
 **Scope:** M
 
 ### Checkpoint B
@@ -263,14 +263,14 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - The Failed tab menu gets Clear failed.
 - Held rows show "Queued".
 **Acceptance:**
-- [ ] Headless tests: Add to queue sends Enqueue, and Start sends StartHeld.
-- [ ] The toggle sends SetSitePaused.
-- [ ] Clear opens the confirm, and confirming sends the answer.
-- [ ] The ConfirmClearQueue prompt renders.
+- [x] Headless tests: Add to queue sends Enqueue, and Start sends StartHeld.
+- [x] The toggle sends SetSitePaused.
+- [x] Clear opens the confirm, and confirming sends the answer.
+- [x] The ConfirmClearQueue prompt renders.
 **Verify:**
-- [ ] `nix-shell --run "cargo test -p filecargo-gui"`
+- [x] `nix-shell --run "cargo test -p filecargo-gui"`
 **Dependencies:** T12
-**Files:** `crates/filecargo-gui/src/{toolbar,pane,prompts}.rs`, `crates/filecargo-gui/src/bottom/{mod,queue}.rs`, `crates/filecargo-gui/tests/transfers.rs`
+**Files:** `crates/filecargo-gui/src/{toolbar,pane,prompts}.rs`, `crates/filecargo-gui/src/bottom/{mod,queue}.rs`, `crates/filecargo-gui/tests/{transfers,staged_queue}.rs`
 **Scope:** M
 
 ### T15: integration round trip and spec/doc updates

@@ -249,23 +249,14 @@ impl Workspace {
                     })),
             )
             .child(
-                Button::new("pause")
+                Button::new("add-to-queue")
                     .small()
-                    .icon(if state.queue.processing {
-                        IconName::Pause
-                    } else {
-                        IconName::Play
-                    })
-                    .label(if state.queue.processing {
-                        "Pause transfers"
-                    } else {
-                        "Resume transfers"
-                    })
+                    .icon(IconName::Plus)
+                    .label("Add to queue")
+                    .disabled(!connected)
                     .on_click(cx.listener(|this, _, _, cx| {
-                        let processing = this.model.read(cx).state.queue.processing;
-                        this.model
-                            .read(cx)
-                            .send(Command::QueueSetProcessing(!processing));
+                        this.focused_view()
+                            .update(cx, |pane, cx| pane.enqueue_selection(cx));
                     })),
             )
             .child(div().flex_1())

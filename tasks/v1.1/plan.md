@@ -120,7 +120,7 @@ See [todo.md](todo.md) for acceptance criteria, verification and files.
 - [x] T11: transfer: held items persist; restored items come back held; v1 files load
 - [x] T12: app-core queue commands (Enqueue, StartHeld, SetSitePaused, Clear with confirm, ClearFailed)
 - [x] T13: TUI `a` / `S` / `p` / `X` and Clear failed
-- [ ] T14: GUI Add to queue, Start queue, pause toggle and Clear queue
+- [x] T14: GUI Add to queue, Start queue, pause toggle and Clear queue
 - [ ] T15: Integration round trip (enqueue → restart → start) and spec/doc updates
 
 **Checkpoint C (complete):**

@@ -337,6 +337,9 @@ fn menu_items(pane: PaneId) -> Vec<Option<(&'static str, MenuAction)>> {
         },
         |pane, _, cx| pane.transfer_selection(cx),
     ))];
+    items.push(Some(("Add to queue", |pane, _, cx| {
+        pane.enqueue_selection(cx)
+    })));
     items.push(None);
     items.push(Some(("New folder…", |pane, window, cx| {
         pane.new_folder(window, cx)
@@ -631,6 +634,22 @@ impl FilePaneView {
             cx.notify();
         });
         self.transfer_names(names, cx);
+    }
+
+    /// Adds the selection (or the row under the cursor) to the queue without starting it.
+    pub fn enqueue_selection(&mut self, cx: &mut Context<Self>) {
+        let names = self.target_names(cx);
+        if names.is_empty() {
+            return;
+        }
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().selected.clear();
+            cx.notify();
+        });
+        self.model.read(cx).send(Command::Enqueue {
+            from: self.pane,
+            names,
+        });
     }
 }
 

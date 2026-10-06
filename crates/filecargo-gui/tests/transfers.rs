@@ -152,19 +152,19 @@ async fn the_queue_lists_a_running_transfer_pause_toggles_and_delete_removes_it(
     let queue = cx.read_entity(&bottom, |b, _| b.queue.clone());
     assert_eq!(cx.read_entity(&queue, |t, _| t.delegate().items().len()), 1);
 
-    // pause / resume through the toolbar
+    // pause / resume this site through the Queue tab
     cx.update_window(e.h.window.into(), |_, window, cx| {
         window.render_frame(cx);
-        window.click("pause", cx);
+        window.click("queue-pause", cx);
     })
     .unwrap();
-    e.h.wait_state(cx, "paused", |s| !s.queue.processing).await;
+    e.h.wait_state(cx, "paused", |s| s.site_paused()).await;
     cx.update_window(e.h.window.into(), |_, window, cx| {
         window.render_frame(cx);
-        window.click("pause", cx);
+        window.click("queue-pause", cx);
     })
     .unwrap();
-    e.h.wait_state(cx, "resumed", |s| s.queue.processing).await;
+    e.h.wait_state(cx, "resumed", |s| !s.site_paused()).await;
 
     // Delete removes the item under the cursor of the list on show
     queue.update(cx, |t, cx| t.set_selected_row(0, cx));

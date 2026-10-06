@@ -69,6 +69,36 @@ pub fn row_paths(item: &QueueItem) -> (String, String) {
     )
 }
 
+/// A menu label and the command a click on it sends for the row's transfer.
+pub type MenuEntry = (&'static str, fn(TransferId) -> Command);
+
+/// The right-click entries of a list row: each makes its command from the row's transfer id.
+pub fn menu_entries(kind: ListKind) -> Vec<MenuEntry> {
+    let mut entries: Vec<MenuEntry> = Vec::new();
+    if kind == ListKind::Failed {
+        entries.push(("Retry", Command::QueueRetry));
+        entries.push(("Retry all failed", |_| Command::QueueRetryFailed));
+    }
+    entries.push(("Remove", Command::QueueRemove));
+    match kind {
+        ListKind::Completed => {
+            entries.push(("Clear completed", |_| Command::QueueClearCompleted));
+        }
+        ListKind::Failed => entries.push(("Clear failed", |_| Command::QueueClearFailed)),
+        ListKind::Queue => {}
+    }
+    entries
+}
+
+/// What the progress column says for an item that is not running.
+pub fn waiting_label(state: &ItemState) -> &'static str {
+    match state {
+        ItemState::Held => "queued (held)",
+        ItemState::AwaitingDecision { .. } => "waiting for you",
+        _ => "queued",
+    }
+}
+
 pub struct QueueDelegate {
     pub kind: ListKind,
     handle: AppHandle,
@@ -211,9 +241,12 @@ impl TableDelegate for QueueDelegate {
                 },
                 ItemState::AwaitingDecision { .. } => div()
                     .text_color(cx.theme().warning)
-                    .child("waiting for you")
+                    .child(waiting_label(&item.state))
                     .into_any_element(),
-                _ => div().text_color(muted).child("queued").into_any_element(),
+                state => div()
+                    .text_color(muted)
+                    .child(waiting_label(state))
+                    .into_any_element(),
             },
             (ListKind::Queue, 4) => match (&item.state, item.size) {
                 (ItemState::Active { .. }, Some(total)) => div()
@@ -294,29 +327,11 @@ impl TableDelegate for QueueDelegate {
         let Some(id) = self.id_at(row_ix) else {
             return menu;
         };
-        let send = |handle: &AppHandle, command: fn(TransferId) -> Command| {
-            let handle = handle.clone();
-            move |_: &_, _: &mut Window, _: &mut App| handle.send(command(id))
-        };
         let mut menu = menu;
-        if self.kind == ListKind::Failed {
-            menu = menu.item(
-                PopupMenuItem::new("Retry").on_click(send(&self.handle, Command::QueueRetry)),
-            );
-            let all = self.handle.clone();
-            menu = menu.item(
-                PopupMenuItem::new("Retry all failed")
-                    .on_click(move |_, _, _| all.send(Command::QueueRetryFailed)),
-            );
-        }
-        menu = menu
-            .item(PopupMenuItem::new("Remove").on_click(send(&self.handle, Command::QueueRemove)));
-        if self.kind == ListKind::Completed {
-            let clear = self.handle.clone();
-            menu = menu.item(
-                PopupMenuItem::new("Clear completed")
-                    .on_click(move |_, _, _| clear.send(Command::QueueClearCompleted)),
-            );
+        for (label, command) in menu_entries(self.kind) {
+            let handle = self.handle.clone();
+            menu = menu
+                .item(PopupMenuItem::new(label).on_click(move |_, _, _| handle.send(command(id))));
         }
         menu
     }
