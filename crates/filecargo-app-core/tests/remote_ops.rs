@@ -2,7 +2,6 @@
 
 mod support;
 
-use std::path::Path;
 use std::time::Duration;
 
 use filecargo_app_core::{AppState, Command, Level, PaneId, PromptAnswer, PromptKind};
@@ -179,7 +178,7 @@ fn chmod_changes_the_permissions_of_the_selection() {
             .filter(|e| e.name.ends_with(".txt"))
             .all(|e| e.permissions.map(|p| p & 0o777) == Some(0o600))
     });
-    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&server.path().join("projects/a.txt")), 0o600);
     assert_eq!(mode(&server.path().join("projects/b.txt")), 0o600);
 }
