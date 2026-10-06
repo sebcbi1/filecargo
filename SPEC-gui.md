@@ -38,7 +38,7 @@ that follows the system.
 | Server tree | click selects · double-click connects (site) / toggles (folder) · right-click: Connect, Edit, Rename, Duplicate, Move to…, Delete, New site/folder, Import FileZilla… | arrows, Enter, F2 rename, Del delete |
 | File panes | click / secondary-click / shift-click select (multi) · double-click opens a dir or transfers a file to the other side · header click sorts · right-click: Upload/Download, Open, Rename, Delete, New folder, Permissions…, Refresh | arrows, Enter, Backspace parent, `secondary-a` all, F5 transfer, F7 mkdir, F2 rename, Del delete, `secondary-r` refresh, `secondary-l` focus path input |
 | Path input | type a path + Enter | |
-| Queue / Failed | right-click: Retry, Remove, Clear completed · toolbar toggle: pause processing | Del remove |
+| Queue / Failed | right-click: Retry, Remove, Clear completed / Clear failed · Queue tab buttons: Start queue, Pause/Resume (this site), Clear queue (confirm) | Del remove |
 | Terminal | click focuses · selection with the mouse copies on `secondary-c` · `secondary-v` pastes | every key goes to the shell except `secondary-c/v`, which are copy/paste only when text is selected or the clipboard is non-empty |
 | Global | | `secondary-q` quit · `secondary-,` settings · `secondary-1..5` bottom tabs · `secondary-k` connect to the selected site |
 
@@ -137,3 +137,12 @@ that follows the system.
 Drag and drop between panes or from the OS file manager (stretch goal after v1, on gpui
 `on_drag` / `on_drop`), persisting layout or window size, custom themes, app bundles/installers,
 code signing and auto-update, multiple windows or session tabs, file previews.
+
+## v1.1 changes
+- The local pane's context menu offers New folder, Rename, Delete and Permissions (Unix); the
+  toolbar's Folder, Rename and Delete act on the last-focused pane.
+- "Add to queue" (toolbar button and pane context-menu entry) holds the selection without
+  starting it; held rows show "queued (held)". The queue-wide pause button is replaced by the
+  per-site Pause/Resume in the Queue tab.
+- The bottom panel shows the connected site only (empty when not connected) with Local and
+  Remote path columns; the toolbar says "N transfers on other sites" while others transfer.

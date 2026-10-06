@@ -1,6 +1,6 @@
 # Spec: v1.1 (local file operations, per-connection bottom panel, staged queue)
 
-> Increment id: `v1.1` · Source: [TODO.md](TODO.md) · Status: **draft, awaiting review**
+> Increment id: `v1.1` · Source: [TODO.md](TODO.md) · Status: **implemented**
 > Builds on the v1 modules in [SPEC.md](SPEC.md). Module ids don't change. Each feature below
 > names the modules it touches, and the contract changes go in the provider's spec
 > (`transfer`, `app-core`) when the feature is implemented.

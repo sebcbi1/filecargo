@@ -281,18 +281,25 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
   SMOKE.md files and the README key list.
 - Mark SPEC-v1.1 implemented.
 **Acceptance:**
-- [ ] `cargo it` passes on fresh containers.
-- [ ] The specs match the code (Command enum, ItemState, keys).
-- [ ] SMOKE lists the v1.1 checks.
+- [x] `cargo it` passes on fresh containers.
+- [x] The specs match the code (Command enum, ItemState, keys).
+- [x] SMOKE lists the v1.1 checks.
 **Verify:**
-- [ ] `docker compose -f tests/docker/compose.yml up --build --wait && cargo it`
-- [ ] `cargo llvm-cov --workspace --exclude filecargo-gui --summary-only` shows lines at or
+- [x] `docker compose -f tests/docker/compose.yml up --build --wait && cargo it`
+- [x] `cargo llvm-cov --workspace --exclude filecargo-gui --summary-only` shows lines at or
   above v1.
 **Dependencies:** T13, T14
 **Files:** `crates/filecargo-transfer/tests/integration.rs`, `SPEC-*.md`, `crates/*/SMOKE.md`, `README.md`
 **Scope:** M (docs are mostly text)
 
 ### Checkpoint C (complete)
-- [ ] Every SPEC-v1.1 success criterion is met.
-- [ ] Full suite plus `cargo it` are green, and coverage is no lower than v1.
-- [ ] Human review, then the user pushes and CI runs (no push or tag without being asked).
+- [x] Every SPEC-v1.1 success criterion is met.
+- [x] Full suite plus `cargo it` are green, and coverage is no lower than v1.
+- [ ] (pending) Human review, then the user pushes and CI runs (no push or tag without being asked).
+
+## Notes (v1.1 build)
+- T12: the tests live in `crates/filecargo-app-core/tests/queue_commands.rs` (new) rather than `transfers.rs`/`prompts.rs`.
+- T13: Held rows show "queued (held)" (Pending stays "queued"); the tab header shows "Queue (N, paused)"; `C` on the Queue tab still clears completed.
+- T14: the toolbar's global pause button is replaced by per-site Start/Pause/Clear buttons in the Queue tab; `tests/transfers.rs` pause test now drives `queue-pause`.
+- T15: `cargo it` green on fresh containers (the flaky FTP test did not hang). Coverage (`cargo llvm-cov --workspace --exclude filecargo-gui`): total lines 84.77%; app-core 91.3%, transfer 95.6%, tui 93.2% (remote-fs unit-only without integration features).
+- Manual checks (Checkpoints A, B, C, T1, T3) remain pending.

@@ -33,10 +33,10 @@ action is an `app_core::Command`, and every visible fact comes from `AppState`.
 
 | Context | Keys |
 |---|---|
-| Global | `Tab` / `Shift-Tab` focus next/prev area · `F1` / `?` help overlay · `Ctrl-r` refresh focused pane · `Alt-1..5` bottom tabs · `F9` toggle server tree · `F10` maximize bottom panel · `q` / `Ctrl-q` quit |
+| Global | `Tab` / `Shift-Tab` focus next/prev area (`BackTab` matches with or without `SHIFT`) · `F1` / `?` help overlay · `Ctrl-r` refresh focused pane · `Alt-1..5` bottom tabs · `F9` toggle server tree · `F10` maximize bottom panel · `q` / `Ctrl-q` quit |
 | Server tree | `↑↓` move · `→` / `←` expand/collapse · `Enter` connect (site) or toggle (folder) · `n` new site · `N` new folder · `e` edit · `r` rename · `D` duplicate · `m` move to folder · `Del` delete · `i` import FileZilla · `x` disconnect |
-| File panes | `↑↓ PgUp PgDn Home End` move · `Enter` open dir (or transfer a file to the other side) · `Backspace` parent · `Space` / `Ins` toggle select · `*` invert · `Ctrl-a` select all · `F5` / `t` transfer selection (or cursor) to the other side · `F7` mkdir · `F2` rename · `F8` / `Del` delete · `c` chmod · `.` toggle hidden · `s` cycle sort · `g` go to path |
-| Queue / Failed | `↑↓` move · `R` retry (Failed: all with `Shift-R`) · `Del` remove · `C` clear completed · `p` pause/resume processing |
+| File panes | `↑↓ PgUp PgDn Home End` move · `Enter` open dir (or transfer a file to the other side) · `Backspace` parent · `Space` / `Ins` toggle select · `*` invert · `Ctrl-a` select all · `F5` / `t` transfer selection (or cursor) to the other side · `a` add to the queue without starting · `F7` mkdir · `F2` rename · `F8` / `Del` delete · `c` chmod (F7/F2/F8/`c` act on the focused pane; local chmod not on Windows) · `.` toggle hidden · `s` cycle sort · `g` go to path |
+| Queue / Completed / Failed | `↑↓` move · `r` retry / `R` retry all (Failed) · `Del` remove · `C` clear completed (Failed tab: clear failed) · `p` pause/resume this site (tab header shows "paused") · `S` start the held items (Queue tab) · `X` clear this site's queue after a confirm (Queue tab) |
 | Log | `↑↓ PgUp PgDn` scroll · `End` follow |
 | Terminal | All keys go to the remote shell. **`Ctrl-\`** or **`F12`** leaves terminal focus. `Shift-PgUp` / `Shift-PgDn` scroll back. |
 | Dialogs | `Enter` confirm · `Esc` cancel · `Tab` next field · access keys shown underlined |
@@ -113,3 +113,10 @@ other side, like FileZilla's double-click.
 ## Out of scope (v1)
 Themes or config of key bindings, mouse drag and drop, split or extra tabs, inline file preview,
 image rendering.
+
+## v1.1 changes
+- Shift-Tab moves focus backwards. File-op keys act on the focused (local or remote) pane.
+- The Queue, Completed, Failed and Log tabs show the connected site only (empty when not
+  connected); rows show direction, local path, remote path (long paths cut from the left), size
+  and progress. The status bar says "N transfers on other sites" while other sites transfer.
+- Held items show as "queued (held)". `p` toggles the site's pause (the queue-wide toggle is gone).

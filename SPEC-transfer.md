@@ -48,6 +48,7 @@ pub struct QueueItem {
 
 pub enum ItemState {
     Pending,
+    Held,                                         // v1.1: queued but never started until `start_held`
     Active { started: SystemTime },
     AwaitingDecision { conflict: ConflictInfo },  // waiting for the owner to answer
     Completed { outcome: Outcome, finished: SystemTime },
@@ -74,11 +75,21 @@ impl Queue {
     pub async fn start(connector: Arc<dyn Connector>, store: PathBuf, limits: QueueLimits)
         -> Result<(Queue, mpsc::UnboundedReceiver<QueueEvent>), TransferError>;
     pub fn enqueue(&self, items: Vec<NewTransfer>) -> Vec<TransferId>;
+    /// v1.1: like `enqueue`, but every item (a directory is one item; its children are listed when
+    /// it runs, and inherit the Held state of their parent) waits as `Held`.
+    pub fn enqueue_held(&self, items: Vec<NewTransfer>) -> Vec<TransferId>;
+    pub fn start_held(&self, site: SiteId);              // that site's Held items become Pending
     pub fn resolve(&self, id: TransferId, decision: ConflictDecision);
     pub fn retry(&self, id: TransferId);
     pub fn retry_all_failed(&self);
     pub fn remove(&self, id: TransferId);    // cancels if active; a partial file is left as is
     pub fn clear_completed(&self);
+    pub fn clear_completed_site(&self, site: SiteId);   // v1.1: per-site clears
+    pub fn clear_failed(&self, site: SiteId);
+    /// Cancels the site's active items (partial files stay) and removes its pending and held ones.
+    pub fn clear(&self, site: SiteId);
+    /// A paused site starts no new items (active ones finish); other sites are unaffected.
+    pub fn set_site_paused(&self, site: SiteId, paused: bool);
     pub fn set_processing(&self, on: bool);  // pause/resume starting new items
     pub fn set_limits(&self, limits: QueueLimits);
     pub fn snapshot(&self) -> Arc<QueueSnapshot>;   // latest view, cheap
@@ -97,10 +108,11 @@ pub enum QueueEvent {
 }
 
 pub struct QueueSnapshot {
-    pub pending: Vec<QueueItemView>,               // incl. Active and AwaitingDecision, queue order
+    pub pending: Vec<QueueItemView>,               // incl. Held, Active and AwaitingDecision, queue order
     pub completed: Vec<QueueItemView>,             // newest first, capped at 1,000
     pub failed: Vec<QueueItemView>,
     pub processing: bool,
+    pub paused_sites: BTreeSet<SiteId>,            // v1.1: not persisted
     pub totals: Totals,                            // bytes done/total, rate, ETA for the whole queue
 }
 pub struct QueueItemView { pub item: QueueItem, pub rate: Option<f64> /* B/s */, pub eta: Option<Duration> }
@@ -155,10 +167,11 @@ set a time is logged, never fatal.
   until 1 s of data exists.
 
 ### Persistence (`<data>/queue.json`)
-- Saved: items that are `Pending`, `Active` (saved as `Pending` with `transferred`),
+- Saved: items that are `Held`, `Pending`, `Active` (saved as `Pending` with `transferred`),
   `AwaitingDecision` (saved as `Pending`) and `Failed`. **Completed items are not persisted.**
-- Format: `{ "version": 1, "next_id": n, "items": [...] }`, written atomically (config's
+- Format: `{ "version": 2, "next_id": n, "items": [...] }` (a file without `version`, or with 1, is read as v1), written atomically (config's
   `atomic_write`), debounced to at most 1 write/s, plus a final write on `shutdown`.
+- **On load, every `Pending` or interrupted item (v1 or v2) comes back `Held`**, so nothing starts after a restart until `start_held`; `Failed` stays `Failed`. Per-site pause flags are not persisted.
 - A corrupt or newer-version file is renamed to `queue.json.bak-<unix-secs>`; the queue starts
   empty and logs a warning. Losing the queue must not stop the app.
 
@@ -176,7 +189,7 @@ pub enum TransferError { Connect(String), Fs(FsError), LocalIo(String), SiteDele
 1. With `RootedFs` as the "server": uploading and downloading a tree of 1,000 files over 50 directories gives byte-identical trees (SHA-256 of each file). `max_concurrent` is never exceeded (instrumented connector).
 2. Each conflict rule has a test showing the resulting target content and `Outcome`. `Ask` + `apply_to_all` answers the remaining conflicts without new `ConflictAsked` events.
 3. Fault injection: a connection drop at byte N of a 10 MB file retries automatically, resumes at the target's current size (not 0), and the final SHA-256 matches. After 3 consecutive failures the item is `Failed` with the reason.
-4. Restart: `shutdown` with pending, active (partial) and failed items, then `start` again, restores them. The partial one resumes from its offset.
+4. Restart: `shutdown` with pending, active (partial) and failed items, then `start` again, restores them (pending ones as `Held`; `start_held` resumes the partial one from its offset). A v1 `queue.json` fixture loads.
 5. A corrupt `queue.json` is backed up, the queue starts empty, and a warning is logged.
 6. `remove` on an active item cancels it within 1 s and frees its worker slot.
 7. `Changed` events are emitted at most 10×/s under a 1,000-small-file transfer (counted in test).
@@ -185,3 +198,9 @@ pub enum TransferError { Connect(String), Fs(FsError), LocalIo(String), SiteDele
 ## Out of scope (v1)
 Speed limits, per-item priorities and drag-to-reorder, scheduled transfers, verifying with
 remote checksums, following symlinks, FXP, persisting the Completed list.
+
+## v1.1 additions (staged queue)
+
+9. Held items are never scheduled; `start_held(A)` starts A's only; directories expand into held children.
+10. `set_site_paused(A, true)` leaves B scheduling; `clear(A)` cancels A's active items (partial file kept) and removes A's pending and held items, leaving B untouched; `clear_failed(A)` and `clear_completed_site(A)` are per site.
+11. Integration: an SFTP round trip enqueues held items, closes and reopens the queue from disk, finds them held, starts them and the files arrive.

@@ -11,8 +11,8 @@ Sites, folders and settings are shared: a site added in one front-end exists in 
 
 - SFTP (password, key file, agent), FTP and FTPS (explicit and implicit) with certificate prompts and pinning
 - Server tree with folders, FileZilla `sitemanager.xml` import, passwords in the OS keychain
-- Local and remote panes: sorting, multi-select, rename, delete, chmod, new folder
-- Transfer queue: resume, automatic retry, conflict rules (overwrite, newer, resume, skip, keep both), per-file progress
+- Local and remote panes: sorting, multi-select, rename, delete, chmod, new folder (on either pane)
+- Transfer queue: resume, automatic retry, conflict rules (overwrite, newer, resume, skip, keep both), per-file progress; the panel follows the connected site; stage files with *Add to queue* and start, pause (per site) or clear them later; held items survive a restart
 - Built-in SSH terminal tab (SFTP sessions)
 - Log tab, notifications, light/dark theme (GUI)
 
@@ -48,7 +48,7 @@ filecargo-tui        # TUI;  --config-dir <path>, --help
 ```
 
 The config directory can be changed with `FILECARGO_CONFIG_DIR` (GUI) or `--config-dir` (TUI).
-Press `F1` in the TUI for its key bindings.
+Press `F1` in the TUI for its key bindings. Queue keys: `a` add to queue, and in the Queue tab `S` start, `p` pause / resume this site, `X` clear (asks first); `C` clears completed (Failed tab: failed).
 
 ## Develop
 

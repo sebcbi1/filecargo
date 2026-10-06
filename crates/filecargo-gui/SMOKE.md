@@ -29,7 +29,7 @@ prompt). On Windows the release build needs `fxc.exe` from the Windows SDK (`GPU
    - [ ] Select several local files (click, `shift`-click, `secondary`-click, `secondary-a`), `F5`: they run in the *Queue* tab with progress bars, speed and ETA, then appear in *Completed*; the remote pane refreshes by itself. The tab labels show the counts.
    - [ ] Upload a file that exists: the conflict dialog compares both; *Apply to all* works; Esc skips.
    - [ ] Download from the remote pane (`F5`, toolbar *Download*, double-click a file).
-   - [ ] *Pause transfers* stops new transfers and says *Resume*; the row menu has Retry / Remove / Clear completed; `Delete` removes the row under the cursor.
+   - [ ] The Queue tab's *Pause* stops new transfers of this site only and says *Resume*; the row menu has Retry / Remove / Clear completed (Failed: Clear failed); `Delete` removes the row under the cursor.
    - [ ] With the window in the background, finish a batch: an OS notification appears (Linux needs a notification daemon).
 5. **Remote operations**: `F7` new folder, `F2` rename, `Delete` (asks first), *Permissions…* (octal and the nine boxes follow each other), the path bar (`secondary-l`, type a path, Enter), double-click a folder and the `..` row, a header click sorts.
 6. **Terminal (SFTP)**
@@ -41,6 +41,12 @@ prompt). On Windows the release build needs `fxc.exe` from the Windows SDK (`GPU
 7. **Notices and quit**: an info notice fades, an error stays until closed; quitting with a transfer running asks first (*Quit* / *Cancel*).
 8. **Settings**: change *Simultaneous transfers* and *Show hidden files*, save; the panes react; bad numbers are refused inline.
 
+9. **v1.1 checks**
+   - [ ] The local pane's right-click menu has New folder, Rename, Delete (asks first) and Permissions (Unix); the toolbar's Folder / Rename / Delete act on the pane you last clicked.
+   - [ ] Connected to A while B transfers in the background: the bottom panel shows A only with Local and Remote path columns, the toolbar says "N transfers on other sites"; disconnected, the lists are empty.
+   - [ ] *Add to queue* (toolbar or right-click) holds files as "queued (held)"; *Start queue* starts them; *Pause* affects this site only; *Clear queue* asks first; the Failed tab menu has *Clear failed*.
+   - [ ] Quit with held items, restart: they come back held until *Start queue*.
+
 ## Automated coverage that stands in for part of this list
 
 | What | Where |
@@ -48,7 +54,8 @@ prompt). On Windows the release build needs `fxc.exe` from the Windows SDK (`GPU
 | Every dialog, prompt kind, the site editor round trip, tree operations | `tests/dialogs.rs`, `tests/prompts.rs`, `tests/utility.rs` (headless, real dialogs) |
 | Panes, multi-select, navigation, sorting | `tests/panes.rs` |
 | Tree, connect / disconnect, toolbar | `tests/tree.rs` |
-| Transfers, queue, pause, log, tabs | `tests/transfers.rs` |
+| Transfers, queue, per-site pause, log, tabs | `tests/transfers.rs` |
+| Local ops, scoped panel, staged queue (add / start / pause / clear) | `tests/local_ops.rs`, `tests/scope.rs`, `tests/staged_queue.rs` |
 | Shortcuts (F2 / F5 / F7 / Delete, `secondary-k/l/1..5`) | `tests/shortcuts.rs` |
 | Terminal: keys → bytes, global shortcuts not stealing keys, resize, wide characters / colours, reopen | `tests/terminal.rs`, `src/terminal/{keys,runs}.rs` |
 | Window opens, snapshots re-render, theme switch | `tests/window.rs` |

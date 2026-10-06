@@ -168,3 +168,113 @@ async fn sftp_thousand_file_round_trip_with_four_workers() {
 async fn ftp_thousand_file_round_trip_with_four_workers() {
     round_trip(Protocol::Ftp, 2121, "ftpuser", "ftppass").await;
 }
+
+/// v1.1: held items survive closing the queue, come back held, and transfer once started.
+#[tokio::test]
+async fn sftp_held_items_survive_a_restart_and_transfer_when_started() {
+    let config = tempfile::tempdir().unwrap();
+    let mut site = filecargo_config::Site::new("docker", Protocol::Sftp, "127.0.0.1");
+    site.port = Some(2222);
+    site.user = "fcuser".to_owned();
+    site.auth = Auth::Password { remember: false };
+    let mut ctx = ConnectContext::new(
+        Paths::from_override(Some(config.path().to_path_buf())),
+        Arc::new(MemoryStore::new()),
+        Arc::new(Auto("fcpass")),
+    );
+    ctx.user_known_hosts = None;
+    let site_id = site.id;
+    let connector = Arc::new(RealConnector {
+        sites: HashMap::from([(site_id, site.clone())]),
+        ctx,
+    });
+    let probe = connect(&site, &connector.ctx).await.unwrap();
+    let base = probe
+        .info
+        .home
+        .join(&format!("fc-held-{}", std::process::id()))
+        .unwrap();
+    probe.fs.mkdir(&base).await.unwrap();
+
+    let local = tempfile::tempdir().unwrap();
+    let names = ["one.txt", "two.txt", "three.txt"];
+    for name in names {
+        std::fs::write(local.path().join(name), name).unwrap();
+    }
+    let store = config.path().join("queue.json");
+    let start = || {
+        Queue::start(
+            connector.clone(),
+            store.clone(),
+            QueueLimits {
+                max_concurrent: 2,
+                ..QueueLimits::default()
+            },
+        )
+    };
+
+    // stage three uploads, then close the queue
+    let (queue, _events) = start().await.unwrap();
+    let ids = queue.enqueue_held(
+        names
+            .iter()
+            .map(|name| NewTransfer {
+                site: site_id,
+                direction: Direction::Upload,
+                local: local.path().join(name),
+                remote: base.join(name).unwrap(),
+                is_dir: false,
+                size: None,
+                conflict: None,
+            })
+            .collect(),
+    );
+    assert_eq!(ids.len(), 3);
+    for _ in 0..200 {
+        if queue.snapshot().pending.len() == 3 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(queue.snapshot().pending.len(), 3);
+    queue.shutdown().await;
+
+    // reopened from disk: still three held items, and nothing has been sent
+    let (queue, mut events) = start().await.unwrap();
+    let snapshot = queue.snapshot();
+    assert_eq!(snapshot.pending.len(), 3);
+    assert!(
+        snapshot
+            .pending
+            .iter()
+            .all(|v| matches!(v.item.state, filecargo_transfer::ItemState::Held))
+    );
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert!(
+        probe
+            .fs
+            .stat(&base.join("one.txt").unwrap())
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    queue.start_held(site_id);
+    let done = wait_idle(&mut events, "held items").await;
+    assert_eq!(done, (3, 0));
+    for name in names {
+        assert!(
+            probe
+                .fs
+                .stat(&base.join(name).unwrap())
+                .await
+                .unwrap()
+                .is_some(),
+            "{name} arrived"
+        );
+    }
+
+    queue.shutdown().await;
+    probe.fs.remove_all(&base).await.unwrap();
+    probe.fs.close().await;
+}

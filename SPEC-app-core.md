@@ -69,7 +69,11 @@ pub struct AppState {
     pub session: SessionState,
     pub local: Pane<PathBuf>,
     pub remote: Option<Pane<RemotePath>>,        // Some while connected
-    pub queue: Arc<QueueSnapshot>,
+    pub queue: Arc<QueueSnapshot>,               // every site (quit counting, background transfers)
+    pub scope: Option<SiteId>,                   // v1.1: the connected site; None when not connected
+    pub site_queue: Arc<QueueSnapshot>,          // v1.1: `queue` reduced to `scope` (empty without a scope)
+    pub other_sites_active: usize,               // v1.1: running transfers of other sites
+    // plus `AppState::site_paused()`: is the connected site paused?
     pub terminal: TerminalState,                 // NotAvailable | Closed | Open(TerminalView) | Exited { code, view }
     pub prompt: Option<Prompt>,                  // the one prompt to show now (FIFO behind it)
     pub notices: Vec<Notice>,                    // transient toasts: id, level, text (UI dismisses)
@@ -104,6 +108,7 @@ pub enum PromptKind {
     Conflict { transfer: TransferId, conflict: ConflictInfo },
     ConfirmDelete { pane: PaneId, names: Vec<String>, recursive: bool },
     ConfirmQuit { active_transfers: usize },
+    ConfirmClearQueue { items: usize, active: usize },       // v1.1: `QueueClear` of the connected site
     Message { level: Level, title: String, body: String },   // e.g. ImportReport, fatal errors
 }
 pub enum PromptAnswer {
@@ -129,14 +134,19 @@ pub enum Command {
     // panes
     Navigate { pane: PaneId, path: String },     // absolute, or relative to the pane path
     Up(PaneId), Refresh(PaneId), SetSort { pane: PaneId, sort: Sort },
-    // remote file operations
-    Mkdir { name: String }, Rename { from: String, to: String },
-    Delete { names: Vec<String> },               // confirm prompt when settings.ui.confirm_delete
-    Chmod { names: Vec<String>, mode: u32 },
+    // file operations on the entries of `pane` (v1.1: the local pane too; chmod not on Windows)
+    Mkdir { pane: PaneId, name: String }, Rename { pane: PaneId, from: String, to: String },
+    Delete { pane: PaneId, names: Vec<String> }, // confirm prompt when settings.ui.confirm_delete
+    Chmod { pane: PaneId, names: Vec<String>, mode: u32 },
     // transfers (names are entries of the source pane's current dir)
     Upload { names: Vec<String> }, Download { names: Vec<String> },
     QueueRetry(TransferId), QueueRetryFailed, QueueRemove(TransferId),
-    QueueClearCompleted, QueueSetProcessing(bool),
+    // queue (v1.1: these act on the connected site; without one they raise a notice and do nothing)
+    Enqueue { from: PaneId, names: Vec<String> },   // like Upload/Download, but every item is Held
+    QueueStartHeld, QueueSetSitePaused(bool),
+    QueueClear,                                     // asks (ConfirmClearQueue), then clears the site's queue
+    QueueClearCompleted, QueueClearFailed,          // scoped to the site
+    QueueSetProcessing(bool),                       // queue-wide; the front-ends use QueueSetSitePaused
     // terminal
     TerminalOpen { cols: u16, rows: u16 }, TerminalInput(Vec<u8>),
     TerminalResize { cols: u16, rows: u16 }, TerminalScroll(i32), TerminalClose,
@@ -172,7 +182,7 @@ pub enum Command {
   order (`file2` < `file10`).
 - `show_hidden = false` hides dotfiles (and, on Windows local listings, entries with the
   hidden attribute).
-- Local panes are browse-only in v1. Mkdir, rename, delete and chmod apply to the remote pane.
+- Mkdir, rename, delete and chmod take a `pane`. For `PaneId::Local` they run on a `RootedFs` over the local directory through the same op path as the remote pane, then refresh the local pane. Delete is permanent and honours `confirm_delete`; local chmod is rejected with a notice on Windows.
 
 ### Transfers
 - `Upload { names }`: for each local entry, a `NewTransfer` from `local.path/name` to
@@ -182,6 +192,16 @@ pub enum Command {
 - When an upload into the remote pane's current directory completes, that pane refreshes
   (debounced to 1/s). Same for downloads into the local pane.
 
+### Scope and staged queue (v1.1)
+- `scope` is the connected site; `site_queue` and `other_sites_active` are recomputed when the
+  queue snapshot (by `Arc` pointer) or the session changes. Not connected: `site_queue` is
+  empty. `queue` stays the full snapshot, so quit confirmation counts every site.
+- `Enqueue { from, names }` expands and resolves conflicts like Upload/Download but enqueues
+  held items. `QueueStartHeld` turns the site's held items pending (and resumes the site).
+  `QueueSetSitePaused` pauses only that site. `QueueClear` raises `ConfirmClearQueue` (nothing
+  happens when the site has no items); `Confirm(true)` cancels active items (partial files stay)
+  and removes pending and held ones. Restored items arrive held (see SPEC-transfer).
+
 ### Terminal
 - Available only for SFTP sessions (`TerminalState::NotAvailable` otherwise).
 - Opened lazily on `TerminalOpen` (sent by the UI when the tab is first shown, with its size).
@@ -189,7 +209,7 @@ pub enum Command {
   and key encoding.
 
 ### Log
-- A `tracing` layer feeds a ring buffer of 5,000 `LogLine { time, level, target, message }`.
+- A `tracing` layer feeds a ring buffer of 5,000 `LogLine { time, level, target, message, site: Option<SiteId> }`; `site` comes from the nearest span with a `site` field (session work and each transfer job), and `LogBuffer::lines_for(scope)` returns that site's lines plus app-wide ones (`None`: app-wide only).
   It follows `settings.log.level`, defaulting to `info`. Protocol lines come from the
   `filecargo::protocol` target.
 - If `FILECARGO_LOG_FILE` is set, the same lines are also appended to that file.
@@ -223,5 +243,13 @@ All tests use temp dirs, `MemoryStore` and a `SessionFactory` that serves `Roote
 11. Snapshots are published at most 30×/s during a 1,000-file transfer, and `AppState` clone cost doesn't grow with the entry count (the entries `Arc` is shared, asserted by pointer equality).
 
 ## Out of scope (v1)
-Multiple simultaneous sessions or tabs, local file operations, bookmarks, quick connect,
+Multiple simultaneous sessions or tabs, local trash/recycle bin, bookmarks, quick connect,
 directory comparison or sync, search/filter in panes, remote file editing, persisting UI layout.
+
+## v1.1 acceptance (tests: `local_ops`, `logging`, `transfers`, `queue_commands`)
+- Local mkdir, rename, recursive delete (with confirm) and chmod change the disk and refresh the local pane.
+- A log line inside a site's session or a transfer worker carries the `SiteId`; `lines_for` filters.
+- Connected to A with items for A and B, `site_queue` holds A's only; disconnected, it is empty.
+- Enqueue of 3 files leaves 3 held items and nothing transfers; `QueueStartHeld` transfers them.
+- Pausing A leaves B running. Clear asks first: "no" keeps everything, "yes" empties A only.
+- Queue commands while disconnected raise a notice and change nothing.

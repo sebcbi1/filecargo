@@ -1,6 +1,6 @@
 # Implementation Plan: v1.1
 
-> Spec: [SPEC-v1.1.md](../../SPEC-v1.1.md) · Tasks: [todo.md](todo.md) · Status: **awaiting approval**
+> Spec: [SPEC-v1.1.md](../../SPEC-v1.1.md) · Tasks: [todo.md](todo.md) · Status: **implemented**
 
 ## Overview
 
@@ -121,7 +121,7 @@ See [todo.md](todo.md) for acceptance criteria, verification and files.
 - [x] T12: app-core queue commands (Enqueue, StartHeld, SetSitePaused, Clear with confirm, ClearFailed)
 - [x] T13: TUI `a` / `S` / `p` / `X` and Clear failed
 - [x] T14: GUI Add to queue, Start queue, pause toggle and Clear queue
-- [ ] T15: Integration round trip (enqueue → restart → start) and spec/doc updates
+- [x] T15: Integration round trip (enqueue → restart → start) and spec/doc updates
 
 **Checkpoint C (complete):**
 - Every success criterion in SPEC-v1.1.md is met.

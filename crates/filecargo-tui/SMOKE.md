@@ -66,6 +66,13 @@ For each item, note ✅ / ❌ and the terminal in the table below.
       screen (signals are not handled in v1); `reset` fixes it. A *panic* must restore it (covered
       by `tests/panic.rs`).
 
+11. **v1.1 checks**
+    - [ ] `Shift-Tab` cycles the focus backwards in kitty, xterm and tmux; in the terminal tab it still reaches the shell.
+    - [ ] On the local pane: `F7` mkdir, `F2` rename, `Del` (asks first), `c` chmod (Unix) change the disk and the listing.
+    - [ ] Connected to site A while site B transfers in the background: the Queue / Completed / Failed / Log tabs show A only, rows show both paths, the status bar says "N transfers on other sites"; disconnected, the lists are empty.
+    - [ ] `a` on selected files queues them as "queued (held)" and nothing transfers; `S` in the Queue tab starts them; `p` pauses only this site (the tab header says "paused"); `X` asks, then clears this site's queue; `C` in the Failed tab clears failed items.
+    - [ ] Quit with held items, restart: they come back held and nothing starts until `S`.
+
 ## Automated coverage that stands in for part of this list
 
 | What | Where |
