@@ -319,6 +319,10 @@ mod tests {
         assert_eq!(form.focus, 0, "wraps around");
         form.on_key(key(KeyCode::BackTab));
         assert_eq!(form.focus, 3);
+        form.on_key(key(KeyCode::Down));
+        assert_eq!(form.focus, 0);
+        form.on_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
+        assert_eq!(form.focus, 3, "crossterm sends Shift-Tab as BackTab+SHIFT");
         form.on_key(key(KeyCode::Up));
         assert_eq!(form.focus, 1);
     }

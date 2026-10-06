@@ -214,7 +214,8 @@ pub static BINDINGS: &[Binding] = &[
 fn normalize(key: KeyEvent) -> (KeyCode, KeyModifiers) {
     // terminals disagree on whether `N` arrives with SHIFT: letters are matched by their case
     let mut mods = key.modifiers;
-    if matches!(key.code, KeyCode::Char(_)) {
+    // and BackTab *is* Shift-Tab: crossterm reports it with SHIFT, other terminals without
+    if matches!(key.code, KeyCode::Char(_) | KeyCode::BackTab) {
         mods.remove(KeyModifiers::SHIFT);
     }
     (key.code, mods)
@@ -222,7 +223,7 @@ fn normalize(key: KeyEvent) -> (KeyCode, KeyModifiers) {
 
 fn matches(spec: &KeySpec, code: KeyCode, mods: KeyModifiers) -> bool {
     let mut spec_mods = spec.mods;
-    if matches!(spec.code, KeyCode::Char(_)) {
+    if matches!(spec.code, KeyCode::Char(_) | KeyCode::BackTab) {
         spec_mods.remove(KeyModifiers::SHIFT);
     }
     spec.code == code && spec_mods == mods
@@ -250,4 +251,27 @@ pub fn lookup(context: Context, key: KeyEvent) -> Option<Action> {
             .map(|b| b.action)
     };
     find(context).or_else(|| find(Context::Global))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn back_tab_focuses_the_previous_area_with_or_without_shift() {
+        // crossterm reports Shift-Tab as BackTab + SHIFT
+        for mods in [KeyModifiers::NONE, KeyModifiers::SHIFT] {
+            let event = KeyEvent::new(KeyCode::BackTab, mods);
+            assert_eq!(lookup(Context::Global, event), Some(Action::FocusPrev));
+            assert_eq!(lookup(Context::Files, event), Some(Action::FocusPrev));
+        }
+        let shift_tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT);
+        assert_eq!(lookup(Context::Global, shift_tab), Some(Action::FocusPrev));
+    }
+
+    #[test]
+    fn the_terminal_tab_does_not_bind_back_tab() {
+        let event = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        assert_eq!(lookup_exact(Context::Terminal, event), None);
+    }
 }

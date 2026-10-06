@@ -1360,6 +1360,14 @@ mod tests {
         assert_eq!(ui.focus, Focus::Bottom);
         on_event(&mut ui, &app, with(KeyCode::Tab, KeyModifiers::SHIFT));
         assert_eq!(ui.focus, Focus::Local);
+        on_event(&mut ui, &app, with(KeyCode::BackTab, KeyModifiers::SHIFT));
+        assert_eq!(
+            ui.focus,
+            Focus::Tree,
+            "what a real terminal sends for Shift-Tab"
+        );
+        on_event(&mut ui, &app, with(KeyCode::Tab, KeyModifiers::NONE));
+        assert_eq!(ui.focus, Focus::Local);
 
         app = connected_app();
         sync(&mut ui, &app);

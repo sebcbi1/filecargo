@@ -94,7 +94,7 @@ transfer Held + start_held (T9) ── per-site pause/clear (T10) ── persist
 See [todo.md](todo.md) for acceptance criteria, verification and files.
 
 ### Phase 1: Shift-Tab and local operations
-- [ ] T1: TUI Shift-Tab moves focus backwards
+- [x] T1: TUI Shift-Tab moves focus backwards
 - [ ] T2: app-core file ops take a pane; local mkdir/rename/delete/chmod
 - [ ] T3: TUI file-op keys act on the focused pane
 - [ ] T4: GUI local pane menu and toolbar act on the focused pane

@@ -17,12 +17,12 @@
 **Description:** crossterm reports Shift-Tab as `BackTab` + `SHIFT`, which no binding matches.
 Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog forms.
 **Acceptance:**
-- [ ] `lookup(Global, BackTab+SHIFT)` and `lookup(Global, BackTab)` both give `FocusPrev`.
-- [ ] Dialog forms move to the previous field on `BackTab+SHIFT`.
-- [ ] The terminal tab still sends `BackTab` to the shell.
+- [x] `lookup(Global, BackTab+SHIFT)` and `lookup(Global, BackTab)` both give `FocusPrev`.
+- [x] Dialog forms move to the previous field on `BackTab+SHIFT`.
+- [x] The terminal tab still sends `BackTab` to the shell.
 **Verify:**
-- [ ] `cargo test -p filecargo-tui`
-- [ ] Manual: Shift-Tab in kitty/xterm/tmux cycles backwards.
+- [x] `cargo test -p filecargo-tui`
+- [ ] (pending, manual) Manual: Shift-Tab in kitty/xterm/tmux cycles backwards.
 **Dependencies:** none
 **Files:** `crates/filecargo-tui/src/keymap.rs`, `crates/filecargo-tui/src/form.rs`, `crates/filecargo-tui/src/reducer.rs` (tests)
 **Scope:** XS
