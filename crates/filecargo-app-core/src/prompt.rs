@@ -20,6 +20,10 @@ pub(crate) enum PromptAction {
         transfer: filecargo_transfer::TransferId,
     },
     Quit,
+    /// Clears the queue of this site once confirmed.
+    ClearQueue {
+        site: filecargo_config::SiteId,
+    },
 }
 
 /// A request from a background task: show `kind`, send the answer back on `reply`.
@@ -91,6 +95,12 @@ impl Core {
                 }
                 (PromptAction::Conflict { transfer }, _) => self.answer_conflict(transfer, &answer),
                 (PromptAction::Quit, PromptAnswer::Confirm(true)) => self.quitting = true,
+                (PromptAction::ClearQueue { site }, PromptAnswer::Confirm(true)) => {
+                    if let Some(queue) = &self.queue {
+                        queue.clear(site);
+                    }
+                }
+                (PromptAction::ClearQueue { .. }, _) => {}
                 (PromptAction::Quit, _) => {}
                 (PromptAction::Delete { .. }, _) => {}
             }

@@ -39,6 +39,14 @@ pub struct AppState {
     pub log_generation: u64,
 }
 
+impl AppState {
+    /// Whether the connected site is paused (starts no new transfers).
+    pub fn site_paused(&self) -> bool {
+        self.scope
+            .is_some_and(|site| self.site_queue.paused_sites.contains(&site))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum SessionState {
     Disconnected,
@@ -170,6 +178,12 @@ pub enum PromptKind {
     },
     ConfirmQuit {
         active_transfers: usize,
+    },
+    /// `Command::QueueClear`: cancels the connected site's `active` running transfers and removes
+    /// all its `items` (running, queued and held ones).
+    ConfirmClearQueue {
+        items: usize,
+        active: usize,
     },
     /// e.g. an import report or an error the user must read.
     Message {

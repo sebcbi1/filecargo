@@ -70,10 +70,26 @@ pub enum Command {
     Download {
         names: Vec<String>,
     },
+    /// Like `Upload`/`Download` (from the local/remote pane), but every item waits as `Held`.
+    Enqueue {
+        from: PaneId,
+        names: Vec<String>,
+    },
     QueueRetry(TransferId),
     QueueRetryFailed,
     QueueRemove(TransferId),
+    /// The connected site's completed items. (The queue commands below act on the connected site
+    /// and raise a notice when there is none.)
     QueueClearCompleted,
+    /// Turns the connected site's held items into pending ones, and resumes the site.
+    QueueStartHeld,
+    /// A paused site starts no new items; running ones finish. Other sites are not affected.
+    QueueSetSitePaused(bool),
+    /// Asks first (`PromptKind::ConfirmClearQueue`), then cancels the site's running items and
+    /// removes its pending and held ones.
+    QueueClear,
+    QueueClearFailed,
+    /// The queue-wide switch. The front-ends use the per-site pause instead.
     QueueSetProcessing(bool),
 
     // ---- terminal ----

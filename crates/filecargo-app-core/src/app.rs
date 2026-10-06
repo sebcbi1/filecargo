@@ -512,10 +512,21 @@ impl Core {
             | Command::Chmod { .. }) => self.file_operation(command),
             Command::Upload { names } => self.start_transfers(Direction::Upload, &names),
             Command::Download { names } => self.start_transfers(Direction::Download, &names),
+            Command::Enqueue { from, names } => {
+                let direction = match from {
+                    PaneId::Local => Direction::Upload,
+                    PaneId::Remote => Direction::Download,
+                };
+                self.enqueue_held(direction, &names);
+            }
             command @ (Command::QueueRetry(_)
             | Command::QueueRetryFailed
             | Command::QueueRemove(_)
             | Command::QueueClearCompleted
+            | Command::QueueStartHeld
+            | Command::QueueSetSitePaused(_)
+            | Command::QueueClear
+            | Command::QueueClearFailed
             | Command::QueueSetProcessing(_)) => self.queue_command(command),
             command @ (Command::TerminalOpen { .. }
             | Command::TerminalInput(_)

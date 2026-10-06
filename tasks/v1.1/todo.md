@@ -227,13 +227,13 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - All of them act on the connected site and are ignored with a notice when disconnected.
 - `AppState` exposes whether the current site is paused.
 **Acceptance:**
-- [ ] Enqueue on 3 files leaves 3 held items and nothing transfers.
-- [ ] StartHeld transfers them.
-- [ ] Pausing A leaves B running.
-- [ ] Clear asks first: "no" keeps everything, "yes" empties A only.
-- [ ] Commands while disconnected produce a notice and no change.
+- [x] Enqueue on 3 files leaves 3 held items and nothing transfers.
+- [x] StartHeld transfers them.
+- [x] Pausing A leaves B running.
+- [x] Clear asks first: "no" keeps everything, "yes" empties A only.
+- [x] Commands while disconnected produce a notice and no change.
 **Verify:**
-- [ ] `cargo test -p filecargo-app-core --test transfers --test prompts`
+- [x] `cargo test -p filecargo-app-core --test queue_commands` (new file; plus full suite)
 **Dependencies:** T6, T10, T11
 **Files:** `crates/filecargo-app-core/src/{command,transfers,state,prompt}.rs`, `crates/filecargo-app-core/tests/transfers.rs`
 **Scope:** M

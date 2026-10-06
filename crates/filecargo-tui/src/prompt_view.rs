@@ -118,6 +118,24 @@ fn text_of(
                 dim("y / Enter quit · n / Esc stay"),
             ],
         ),
+        PromptKind::ConfirmClearQueue { items, active } => {
+            let mut lines = vec![Line::raw(format!(
+                "Clear {items} item{} from this site's queue?",
+                if *items == 1 { "" } else { "s" }
+            ))];
+            if *active > 0 {
+                lines.push(Line::styled(
+                    format!(
+                        "{active} running transfer{} will be cancelled; partial files are kept.",
+                        if *active == 1 { "" } else { "s" }
+                    ),
+                    look.tint(Color::Yellow),
+                ));
+            }
+            lines.push(Line::raw(""));
+            lines.push(dim("y / Enter clear · n / Esc cancel"));
+            (" Clear queue ".to_owned(), lines)
+        }
         PromptKind::Message { level, title, body } => {
             let color = match level {
                 Level::Info => Color::Reset,

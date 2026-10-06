@@ -90,13 +90,16 @@ impl PromptUi {
                     _ => None,
                 }
             }
-            (Self::Plain, PromptKind::ConfirmDelete { .. } | PromptKind::ConfirmQuit { .. }) => {
-                match key.code {
-                    KeyCode::Char('y') | KeyCode::Enter => Some(PromptAnswer::Confirm(true)),
-                    KeyCode::Char('n') | KeyCode::Esc => Some(PromptAnswer::Confirm(false)),
-                    _ => None,
-                }
-            }
+            (
+                Self::Plain,
+                PromptKind::ConfirmDelete { .. }
+                | PromptKind::ConfirmQuit { .. }
+                | PromptKind::ConfirmClearQueue { .. },
+            ) => match key.code {
+                KeyCode::Char('y') | KeyCode::Enter => Some(PromptAnswer::Confirm(true)),
+                KeyCode::Char('n') | KeyCode::Esc => Some(PromptAnswer::Confirm(false)),
+                _ => None,
+            },
             (Self::Plain, _) => match key.code {
                 KeyCode::Enter | KeyCode::Esc | KeyCode::Char(' ') => Some(PromptAnswer::Dismiss),
                 _ => None,

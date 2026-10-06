@@ -237,6 +237,15 @@ impl Core {
 
     /// `Upload` / `Download`: one transfer per selected name of the source pane.
     pub(crate) fn start_transfers(&mut self, direction: Direction, names: &[String]) {
+        self.queue_transfers(direction, names, false);
+    }
+
+    /// `Enqueue`: like `start_transfers`, but the items wait as held.
+    pub(crate) fn enqueue_held(&mut self, direction: Direction, names: &[String]) {
+        self.queue_transfers(direction, names, true);
+    }
+
+    fn queue_transfers(&mut self, direction: Direction, names: &[String], held: bool) {
         let (Some(live), Some(remote)) = (&self.live, &self.state.remote) else {
             self.notice(
                 Level::Warning,
@@ -277,21 +286,62 @@ impl Core {
         }
         if let Some(queue) = &self.queue {
             let _span = site_span(live.site).entered();
-            tracing::info!(target: "filecargo::app", count = transfers.len(), ?direction, "queueing transfers");
-            queue.enqueue(transfers);
+            tracing::info!(target: "filecargo::app", count = transfers.len(), ?direction, held, "queueing transfers");
+            if held {
+                queue.enqueue_held(transfers);
+            } else {
+                queue.enqueue(transfers);
+            }
         }
     }
 
     pub(crate) fn queue_command(&mut self, command: Command) {
-        let Some(queue) = &self.queue else { return };
+        let Some(queue) = self.queue.clone() else {
+            return;
+        };
         match command {
             Command::QueueRetry(id) => queue.retry(id),
             Command::QueueRetryFailed => queue.retry_all_failed(),
             Command::QueueRemove(id) => queue.remove(id),
-            Command::QueueClearCompleted => queue.clear_completed(),
             Command::QueueSetProcessing(on) => queue.set_processing(on),
-            _ => {}
+            command => {
+                // the rest act on the connected site
+                let Some(site) = self.live.as_ref().map(|live| live.site) else {
+                    self.notice(
+                        Level::Warning,
+                        "Connect to a server before using its queue.".to_owned(),
+                    );
+                    return;
+                };
+                match command {
+                    Command::QueueClearCompleted => queue.clear_completed_site(site),
+                    Command::QueueClearFailed => queue.clear_failed(site),
+                    Command::QueueStartHeld => queue.start_held(site),
+                    Command::QueueSetSitePaused(paused) => queue.set_site_paused(site, paused),
+                    Command::QueueClear => self.ask_to_clear(site),
+                    _ => {}
+                }
+            }
         }
+    }
+
+    /// `QueueClear`: asks first, unless there is nothing to clear.
+    fn ask_to_clear(&mut self, site: SiteId) {
+        let mine = self
+            .state
+            .queue
+            .pending
+            .iter()
+            .filter(|v| v.item.site == site);
+        let (items, active) = mine.fold((0, 0), |(items, active), view| {
+            let running = matches!(view.item.state, ItemState::Active { .. });
+            (items + 1, active + usize::from(running))
+        });
+        if items == 0 {
+            return;
+        }
+        let id = self.enqueue_prompt(PromptKind::ConfirmClearQueue { items, active });
+        self.actions.insert(id, PromptAction::ClearQueue { site });
     }
 
     /// The owner's answer to a conflict question. Anything but a decision skips the file.

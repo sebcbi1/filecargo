@@ -207,6 +207,19 @@ pub fn open(model: Entity<AppModel>, prompt: Prompt, window: &mut Window, cx: &m
             )];
             open_confirm(answerer, "Quit", lines, "Quit", true, window, cx);
         }
+        PromptKind::ConfirmClearQueue { items, active } => {
+            let mut lines = vec![format!(
+                "Clear {items} item{} from this site's queue?",
+                if items == 1 { "" } else { "s" }
+            )];
+            if active > 0 {
+                lines.push(format!(
+                    "{active} running transfer{} will be cancelled; partial files are kept.",
+                    if active == 1 { "" } else { "s" }
+                ));
+            }
+            open_confirm(answerer, "Clear queue", lines, "Clear", true, window, cx);
+        }
         PromptKind::Message { title, body, .. } => {
             let lines = body.lines().map(str::to_owned).collect();
             let ok = answerer.clone();
