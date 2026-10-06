@@ -57,6 +57,8 @@ Servers, folders and settings are shared: a site added in one UI exists in the o
 | `tui` | ratatui front-end → bin `filecargo-tui` | `app-core` | [SPEC-tui.md](SPEC-tui.md) | done (awaiting final review) |
 | `gui` | gpui front-end → bin `filecargo` | `app-core` | [SPEC-gui.md](SPEC-gui.md) | done (awaiting final review) |
 
+**Increments after v1:** [SPEC-v1.1.md](SPEC-v1.1.md): local file ops, per-connection bottom panel, staged queue (draft).
+
 **Build order:** `config` → `remote-fs` → `transfer`, `terminal` (parallel) → `app-core` → `tui` → `gui`
 
 **Start gates** (from the module plans): `transfer` after remote-fs Checkpoint A · `terminal` after remote-fs Checkpoint B · `app-core` after transfer Checkpoint B + terminal complete · `tui` after app-core Checkpoint C · `gui` after tui Checkpoint B
