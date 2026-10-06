@@ -23,6 +23,13 @@ pub struct AppState {
     /// `Some` while connected.
     pub remote: Option<Pane<RemotePath>>,
     pub queue: Arc<QueueSnapshot>,
+    /// The site the bottom panel is about: the connected one, `None` when not connected.
+    pub scope: Option<SiteId>,
+    /// `queue` reduced to `scope`'s items (empty without a scope). What the Queue, Completed and
+    /// Failed lists show.
+    pub site_queue: Arc<QueueSnapshot>,
+    /// Transfers running for other sites than `scope`; they keep going in the background.
+    pub other_sites_active: usize,
     pub terminal: TerminalState,
     /// The one prompt to show now; the rest wait behind it in order.
     pub prompt: Option<Prompt>,

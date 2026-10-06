@@ -113,12 +113,12 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - They're recomputed when the queue snapshot (by Arc pointer) or the session changes.
 - When disconnected, `site_queue` is empty.
 **Acceptance:**
-- [ ] Connected to A with items for A and B, `site_queue` holds A's only, and
+- [x] Connected to A with items for A and B, `site_queue` holds A's only, and
   `other_sites_active` counts B's active items.
-- [ ] After a disconnect, `site_queue` is empty and `other_sites_active` counts all active items.
-- [ ] Quit confirmation still counts every site.
+- [x] After a disconnect, `site_queue` is empty and `other_sites_active` counts all active items.
+- [x] Quit confirmation still counts every site.
 **Verify:**
-- [ ] `cargo test -p filecargo-app-core --test transfers --test quit`
+- [x] `cargo test -p filecargo-app-core --test transfers --test quit`
 **Dependencies:** T5 (same scope notion; log filtering uses it)
 **Files:** `crates/filecargo-app-core/src/{state,transfers,session}.rs`, `crates/filecargo-app-core/tests/transfers.rs`
 **Scope:** M

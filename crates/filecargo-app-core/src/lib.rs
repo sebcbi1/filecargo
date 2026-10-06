@@ -7,6 +7,7 @@ mod ops;
 mod pane;
 pub mod prelude;
 mod prompt;
+mod scope;
 mod session;
 mod sort;
 mod state;

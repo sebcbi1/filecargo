@@ -99,6 +99,9 @@ impl App {
             local: Pane::new(local_path),
             remote: None,
             queue: Arc::new(QueueSnapshot::default()),
+            scope: None,
+            site_queue: Arc::new(QueueSnapshot::default()),
+            other_sites_active: 0,
             terminal: TerminalState::NotAvailable,
             prompt: None,
             notices: Vec::new(),
@@ -137,6 +140,7 @@ impl App {
             actions: HashMap::new(),
             shared,
             queue: None,
+            scope_cache: None,
             local_refresh: RefreshSchedule::default(),
             remote_refresh: RefreshSchedule::default(),
             local_seq: 0,
@@ -320,6 +324,8 @@ pub(crate) struct Core {
     /// Sites and timeouts as the queue's workers see them.
     pub(crate) shared: Arc<Shared>,
     pub(crate) queue: Option<Queue>,
+    /// What `state.site_queue` was built from.
+    scope_cache: Option<crate::scope::ScopeCache>,
     pub(crate) local_refresh: RefreshSchedule,
     pub(crate) remote_refresh: RefreshSchedule,
     next_prompt: u64,
@@ -376,11 +382,31 @@ impl Core {
     }
 
     /// Marks the state as changed; the actor publishes it (coalesced).
+    /// Rebuilds the scoped queue fields when the queue snapshot or the connected site changed.
+    fn refresh_scope(&mut self) {
+        let scope = crate::scope::scope_of(&self.state.session);
+        if self
+            .scope_cache
+            .as_ref()
+            .is_some_and(|cache| cache.matches(&self.state.queue, scope))
+        {
+            return;
+        }
+        self.state.scope = scope;
+        self.state.site_queue = Arc::new(crate::scope::scoped(&self.state.queue, scope));
+        self.state.other_sites_active = crate::scope::other_sites_active(&self.state.queue, scope);
+        self.scope_cache = Some(crate::scope::ScopeCache::new(
+            self.state.queue.clone(),
+            scope,
+        ));
+    }
+
     pub(crate) fn changed(&mut self) {
         self.dirty = true;
     }
 
     fn publish_now(&mut self) {
+        self.refresh_scope();
         self.state.log_generation = self.log.generation();
         self.publisher.send_replace(Arc::new(self.state.clone()));
         self.dirty = false;
