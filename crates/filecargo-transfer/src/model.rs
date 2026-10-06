@@ -62,6 +62,8 @@ pub struct QueueItem {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ItemState {
+    /// Queued but not started: waits until the owner starts the site's held items.
+    Held,
     Pending,
     Active {
         started: SystemTime,

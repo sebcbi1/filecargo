@@ -181,3 +181,118 @@ async fn an_unknown_site_fails_with_site_was_deleted() {
         other => panic!("{other:?}"),
     }
 }
+
+fn held(h: &Harness) -> Vec<filecargo_transfer::QueueItemView> {
+    h.queue
+        .snapshot()
+        .pending
+        .iter()
+        .filter(|v| matches!(v.item.state, ItemState::Held))
+        .cloned()
+        .collect()
+}
+
+#[tokio::test]
+async fn held_items_wait_forever_even_with_free_workers() {
+    let h = Harness::new(3).await;
+    for name in ["a.txt", "b.txt", "c.txt"] {
+        std::fs::write(h.local.path().join(name), name).unwrap();
+    }
+    let ids = h
+        .queue
+        .enqueue_held(["a.txt", "b.txt", "c.txt"].map(|n| upload(&h, n)).to_vec());
+    assert_eq!(ids.len(), 3);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+
+    let snapshot = h.queue.snapshot();
+    assert_eq!(
+        snapshot.pending.len(),
+        3,
+        "held items are listed as pending"
+    );
+    assert!(
+        snapshot
+            .pending
+            .iter()
+            .all(|v| matches!(v.item.state, ItemState::Held)),
+        "{snapshot:#?}"
+    );
+    assert!(snapshot.completed.is_empty() && snapshot.failed.is_empty());
+    assert_eq!(h.connector.stats.connects(), 0, "nothing connected");
+    assert!(std::fs::read_dir(h.server.path()).unwrap().next().is_none());
+}
+
+#[tokio::test]
+async fn start_held_releases_only_that_sites_items() {
+    let mut h = Harness::new(2).await;
+    let other_server = tempfile::tempdir().unwrap();
+    let other = h.connector.site(other_server.path());
+    for name in ["a.txt", "b.txt"] {
+        std::fs::write(h.local.path().join(name), name).unwrap();
+    }
+    let mut theirs = upload(&h, "b.txt");
+    theirs.site = other;
+    h.queue.enqueue_held(vec![upload(&h, "a.txt"), theirs]);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(held(&h).len(), 2);
+
+    h.queue.start_held(h.site);
+    h.idle().await;
+
+    assert_eq!(
+        std::fs::read(h.server.path().join("a.txt")).unwrap(),
+        b"a.txt"
+    );
+    let remaining = held(&h);
+    assert_eq!(remaining.len(), 1, "the other site's item is still held");
+    assert_eq!(remaining[0].item.site, other);
+    assert!(!other_server.path().join("b.txt").exists());
+    assert_eq!(h.queue.snapshot().completed.len(), 1);
+}
+
+#[tokio::test]
+async fn a_held_directory_is_one_item_until_started_and_then_transfers_its_files() {
+    let mut h = Harness::new(2).await;
+    let dir = h.local.path().join("album");
+    std::fs::create_dir_all(dir.join("inner")).unwrap();
+    std::fs::write(dir.join("one.jpg"), "1").unwrap();
+    std::fs::write(dir.join("inner/two.jpg"), "22").unwrap();
+    h.queue.enqueue_held(vec![NewTransfer {
+        site: h.site,
+        direction: Direction::Upload,
+        local: dir.clone(),
+        remote: remote("/album"),
+        is_dir: true,
+        size: None,
+        conflict: None,
+    }]);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(held(&h).len(), 1);
+    assert!(!h.server.path().join("album").exists());
+
+    h.queue.start_held(h.site);
+    h.idle().await;
+    assert_eq!(
+        std::fs::read(h.server.path().join("album/inner/two.jpg")).unwrap(),
+        b"22"
+    );
+    assert_eq!(
+        std::fs::read(h.server.path().join("album/one.jpg")).unwrap(),
+        b"1"
+    );
+    assert!(held(&h).is_empty());
+}
+
+#[tokio::test]
+async fn normal_items_run_while_other_items_stay_held() {
+    let mut h = Harness::new(2).await;
+    for name in ["a.txt", "b.txt"] {
+        std::fs::write(h.local.path().join(name), name).unwrap();
+    }
+    h.queue.enqueue_held(vec![upload(&h, "a.txt")]);
+    h.queue.enqueue(vec![upload(&h, "b.txt")]);
+    h.idle().await;
+    assert!(h.server.path().join("b.txt").exists());
+    assert!(!h.server.path().join("a.txt").exists());
+    assert_eq!(held(&h).len(), 1, "idle fires although a held item remains");
+}

@@ -61,9 +61,10 @@ fn unix(time: SystemTime) -> u64 {
 
 fn to_persisted(item: &QueueItem) -> Option<Persisted> {
     let state = match &item.state {
-        ItemState::Pending | ItemState::Active { .. } | ItemState::AwaitingDecision { .. } => {
-            PersistedState::Pending
-        }
+        ItemState::Pending
+        | ItemState::Held
+        | ItemState::Active { .. }
+        | ItemState::AwaitingDecision { .. } => PersistedState::Pending,
         ItemState::Failed {
             reason,
             retryable,

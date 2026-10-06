@@ -28,7 +28,11 @@ const SAVE_INTERVAL: Duration = Duration::from_secs(1);
 const RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(2), Duration::from_secs(10)];
 
 pub(crate) enum Command {
-    Enqueue(Vec<(TransferId, NewTransfer)>),
+    Enqueue {
+        items: Vec<(TransferId, NewTransfer)>,
+        held: bool,
+    },
+    StartHeld(filecargo_config::SiteId),
     Resolve(TransferId, ConflictDecision),
     Retry(TransferId),
     RetryAllFailed,
@@ -139,7 +143,9 @@ impl Scheduler {
             }
         }
         // a freshly started empty queue is idle already: no `Idle` event for that
-        let pending_is_empty = pending.is_empty();
+        let pending_is_empty = pending
+            .iter()
+            .all(|s: &Slot| matches!(s.item.state, ItemState::Held));
         Self {
             connector: init.connector,
             store_path: init.store_path,
@@ -194,7 +200,8 @@ impl Scheduler {
     /// Returns `true` when the scheduler should stop.
     async fn handle(&mut self, command: Command) -> bool {
         match command {
-            Command::Enqueue(items) => self.enqueue(items),
+            Command::Enqueue { items, held } => self.enqueue(items, held),
+            Command::StartHeld(site) => self.start_held(site),
             Command::Resolve(id, decision) => self.resolve(id, decision),
             Command::Retry(id) => self.retry(id),
             Command::RetryAllFailed => {
@@ -223,7 +230,7 @@ impl Scheduler {
         false
     }
 
-    fn enqueue(&mut self, items: Vec<(TransferId, NewTransfer)>) {
+    fn enqueue(&mut self, items: Vec<(TransferId, NewTransfer)>, held: bool) {
         for (id, new) in items {
             self.pending.push(Slot::new(QueueItem {
                 id,
@@ -234,14 +241,34 @@ impl Scheduler {
                 is_dir: new.is_dir,
                 size: new.size,
                 transferred: 0,
-                state: ItemState::Pending,
+                state: if held {
+                    ItemState::Held
+                } else {
+                    ItemState::Pending
+                },
                 attempts: 0,
                 parent: None,
                 conflict: new.conflict,
             }));
         }
-        self.was_idle = false;
+        if !held {
+            self.was_idle = false;
+        }
         self.touch(true);
+    }
+
+    fn start_held(&mut self, site: filecargo_config::SiteId) {
+        let mut any = false;
+        for slot in &mut self.pending {
+            if slot.item.site == site && matches!(slot.item.state, ItemState::Held) {
+                slot.item.state = ItemState::Pending;
+                any = true;
+            }
+        }
+        if any {
+            self.was_idle = false;
+            self.touch(true);
+        }
     }
 
     fn resolve(&mut self, id: TransferId, decision: ConflictDecision) {
@@ -559,7 +586,12 @@ impl Scheduler {
         }
         self.start_ready();
 
-        let idle_now = self.pending.is_empty() && self.active.is_empty();
+        // held items wait for the owner: they do not keep the queue busy
+        let idle_now = self.active.is_empty()
+            && self
+                .pending
+                .iter()
+                .all(|s| matches!(s.item.state, ItemState::Held));
         if idle_now && !self.was_idle {
             self.was_idle = true;
             self.override_rule = None;
@@ -650,7 +682,11 @@ impl Scheduler {
         let (mut done, mut total) = (self.batch_bytes, self.batch_bytes);
         let (mut rate, mut any_rate) = (0.0, false);
         let mut eta_ready = false;
-        for slot in &self.pending {
+        for slot in self
+            .pending
+            .iter()
+            .filter(|s| !matches!(s.item.state, ItemState::Held))
+        {
             let size = slot.item.size.unwrap_or(slot.item.transferred);
             total += size;
             done += slot.item.transferred.min(size);

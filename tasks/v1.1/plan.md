@@ -115,7 +115,7 @@ See [todo.md](todo.md) for acceptance criteria, verification and files.
   hint shows B's count. When disconnected the lists are empty.
 
 ### Phase 3: Staged queue
-- [ ] T9: transfer: Held state, enqueue-held and start-held
+- [x] T9: transfer: Held state, enqueue-held and start-held
 - [ ] T10: transfer: per-site pause, clear and clear-failed
 - [ ] T11: transfer: held items persist; restored items come back held; v1 files load
 - [ ] T12: app-core queue commands (Enqueue, StartHeld, SetSitePaused, Clear with confirm, ClearFailed)

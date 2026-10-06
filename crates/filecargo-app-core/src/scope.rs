@@ -35,7 +35,10 @@ pub(crate) fn scoped(full: &QueueSnapshot, scope: Option<SiteId>) -> QueueSnapsh
     let (mut done, mut total) = (0u64, 0u64);
     let (mut rate, mut any_rate) = (0.0, false);
     let mut eta: Option<std::time::Duration> = None;
-    for view in &pending {
+    for view in pending
+        .iter()
+        .filter(|v| !matches!(v.item.state, ItemState::Held))
+    {
         let size = view.item.size.unwrap_or(view.item.transferred);
         total += size;
         done += view.item.transferred.min(size);

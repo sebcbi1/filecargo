@@ -175,12 +175,12 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - `Queue::start_held(site)` turns that site's Held items into Pending.
 - The scheduler never starts a Held item.
 **Acceptance:**
-- [ ] Held items stay held with free workers.
-- [ ] `start_held(A)` starts A's items only.
-- [ ] Directory items expand into Held children.
-- [ ] Snapshot lists include held items in `pending`.
+- [x] Held items stay held with free workers.
+- [x] `start_held(A)` starts A's items only.
+- [x] Directory items expand into Held children.
+- [x] Snapshot lists include held items in `pending`.
 **Verify:**
-- [ ] `cargo test -p filecargo-transfer --test scheduler`
+- [x] `cargo test -p filecargo-transfer --test scheduler`
 **Dependencies:** none
 **Files:** `crates/filecargo-transfer/src/{model,queue,scheduler}.rs`, `crates/filecargo-transfer/tests/scheduler.rs`
 **Scope:** M

@@ -139,12 +139,30 @@ impl Queue {
     }
 
     pub fn enqueue(&self, items: Vec<NewTransfer>) -> Vec<TransferId> {
+        self.enqueue_as(items, false)
+    }
+
+    /// Like [`Queue::enqueue`], but every item waits as [`ItemState::Held`] until
+    /// [`Queue::start_held`]. A directory is one held item; its files are listed when it runs.
+    pub fn enqueue_held(&self, items: Vec<NewTransfer>) -> Vec<TransferId> {
+        self.enqueue_as(items, true)
+    }
+
+    fn enqueue_as(&self, items: Vec<NewTransfer>, held: bool) -> Vec<TransferId> {
         let ids: Vec<TransferId> = items
             .iter()
             .map(|_| TransferId(self.shared.next_id.fetch_add(1, Ordering::SeqCst)))
             .collect();
-        self.send(Command::Enqueue(ids.iter().copied().zip(items).collect()));
+        self.send(Command::Enqueue {
+            items: ids.iter().copied().zip(items).collect(),
+            held,
+        });
         ids
+    }
+
+    /// Turns every held item of `site` into a pending one; other sites' held items stay.
+    pub fn start_held(&self, site: SiteId) {
+        self.send(Command::StartHeld(site));
     }
 
     /// Answers a [`QueueEvent::ConflictAsked`].
