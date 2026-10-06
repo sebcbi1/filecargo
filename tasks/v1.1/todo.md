@@ -35,15 +35,15 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - Chmod on the local pane is rejected with a notice on Windows.
 - Update every TUI/GUI call site to `PaneId::Remote` (behaviour unchanged).
 **Acceptance:**
-- [ ] Local mkdir, rename and recursive delete change the disk, and the local pane refreshes.
-- [ ] Local delete asks first when `confirm_delete` is on, and a "no" leaves the files untouched.
-- [ ] Local chmod sets the mode (`cfg(unix)`).
-- [ ] Invalid names are rejected, as on the remote pane.
-- [ ] Remote ops behave exactly as before: the existing `remote_ops` tests pass unchanged except
+- [x] Local mkdir, rename and recursive delete change the disk, and the local pane refreshes.
+- [x] Local delete asks first when `confirm_delete` is on, and a "no" leaves the files untouched.
+- [x] Local chmod sets the mode (`cfg(unix)`).
+- [x] Invalid names are rejected, as on the remote pane.
+- [x] Remote ops behave exactly as before: the existing `remote_ops` tests pass unchanged except
   for the new field.
 **Verify:**
-- [ ] `cargo test -p filecargo-app-core --test local_ops --test remote_ops`
-- [ ] GUI builds under nix-shell.
+- [x] `cargo test -p filecargo-app-core --test local_ops --test remote_ops`
+- [x] GUI builds under nix-shell.
 **Dependencies:** none
 **Files:** `crates/filecargo-app-core/src/{command,ops,app}.rs`, `crates/filecargo-app-core/tests/local_ops.rs` (new), plus mechanical call-site edits in tui/gui
 **Scope:** M

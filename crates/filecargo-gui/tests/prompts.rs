@@ -236,6 +236,7 @@ async fn confirm_delete_asks_and_only_then_deletes(cx: &mut TestAppContext) {
     connect(&e, cx).await;
     e.h.wait_state(cx, "the session", connected).await;
     e.h.app.send(Command::Delete {
+        pane: PaneId::Remote,
         names: vec!["a.txt".into()],
     });
     dialog_open(&e.h, cx).await;
@@ -248,6 +249,7 @@ async fn confirm_delete_asks_and_only_then_deletes(cx: &mut TestAppContext) {
         "declining deletes nothing"
     );
     e.h.app.send(Command::Delete {
+        pane: PaneId::Remote,
         names: vec!["a.txt".into()],
     });
     dialog_open(&e.h, cx).await;

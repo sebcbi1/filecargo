@@ -8,11 +8,12 @@ use filecargo_remote_fs::{
 use tokio::sync::{mpsc, oneshot};
 
 use crate::app::{Core, Msg};
-use crate::state::{PromptAnswer, PromptId, PromptKind};
+use crate::state::{PaneId, PromptAnswer, PromptId, PromptKind};
 
 /// What a confirmed prompt does, for prompts the app raises itself (not for background tasks).
 pub(crate) enum PromptAction {
     Delete {
+        pane: PaneId,
         names: Vec<String>,
     },
     Conflict {
@@ -85,8 +86,8 @@ impl Core {
         self.prompts.pop_front();
         if let Some(action) = self.actions.remove(&id) {
             match (action, &answer) {
-                (PromptAction::Delete { names }, PromptAnswer::Confirm(true)) => {
-                    self.run_delete(names)
+                (PromptAction::Delete { pane, names }, PromptAnswer::Confirm(true)) => {
+                    self.run_delete(pane, names)
                 }
                 (PromptAction::Conflict { transfer }, _) => self.answer_conflict(transfer, &answer),
                 (PromptAction::Quit, PromptAnswer::Confirm(true)) => self.quitting = true,

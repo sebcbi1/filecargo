@@ -95,7 +95,7 @@ See [todo.md](todo.md) for acceptance criteria, verification and files.
 
 ### Phase 1: Shift-Tab and local operations
 - [x] T1: TUI Shift-Tab moves focus backwards
-- [ ] T2: app-core file ops take a pane; local mkdir/rename/delete/chmod
+- [x] T2: app-core file ops take a pane; local mkdir/rename/delete/chmod
 - [ ] T3: TUI file-op keys act on the focused pane
 - [ ] T4: GUI local pane menu and toolbar act on the focused pane
 

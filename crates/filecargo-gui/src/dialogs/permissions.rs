@@ -95,6 +95,7 @@ impl PermissionsView {
         match parse_octal(&self.octal.read(cx).value()) {
             Some(mode) => {
                 self.model.read(cx).send(Command::Chmod {
+                    pane: PaneId::Remote,
                     names: self.names.clone(),
                     mode,
                 });

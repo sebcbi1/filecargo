@@ -41,19 +41,24 @@ pub enum Command {
         sort: Sort,
     },
 
-    // ---- remote file operations (names are entries of the remote pane's directory) ----
+    // ---- file operations (names are entries of `pane`'s current directory) ----
     Mkdir {
+        pane: PaneId,
         name: String,
     },
     Rename {
+        pane: PaneId,
         from: String,
         to: String,
     },
-    /// Asks first when `settings.ui.confirm_delete`.
+    /// Permanent, recursive for directories. Asks first when `settings.ui.confirm_delete`.
     Delete {
+        pane: PaneId,
         names: Vec<String>,
     },
+    /// Not available on the local pane on Windows (answered with a notice).
     Chmod {
+        pane: PaneId,
         names: Vec<String>,
         mode: u32,
     },

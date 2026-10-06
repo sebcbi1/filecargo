@@ -43,6 +43,7 @@ fn set_confirm_delete(fx: &Fixture, on: bool) {
 fn mkdir_and_rename_change_the_server_and_refresh_the_pane() {
     let (fx, server) = connected();
     fx.app.send(Command::Mkdir {
+        pane: PaneId::Remote,
         name: "newdir".into(),
     });
     let state = fx.wait_for("the new folder", |s| {
@@ -57,6 +58,7 @@ fn mkdir_and_rename_change_the_server_and_refresh_the_pane() {
     assert_eq!(names(&state)[0..2], ["newdir", "sub"], "directories first");
 
     fx.app.send(Command::Rename {
+        pane: PaneId::Remote,
         from: "a.txt".into(),
         to: "renamed.txt".into(),
     });
@@ -79,6 +81,7 @@ fn mkdir_and_rename_change_the_server_and_refresh_the_pane() {
 fn delete_asks_first_and_declining_deletes_nothing() {
     let (fx, server) = connected();
     fx.app.send(Command::Delete {
+        pane: PaneId::Remote,
         names: vec!["a.txt".into()],
     });
     let state = fx.wait_for("the confirmation", |s| s.prompt.is_some());
@@ -111,6 +114,7 @@ fn delete_asks_first_and_declining_deletes_nothing() {
 fn confirming_deletes_files_and_whole_directories_and_refreshes() {
     let (fx, server) = connected();
     fx.app.send(Command::Delete {
+        pane: PaneId::Remote,
         names: vec!["sub".into(), "b.txt".into()],
     });
     let state = fx.wait_for("the confirmation", |s| s.prompt.is_some());
@@ -141,6 +145,7 @@ fn without_confirm_delete_the_deletion_happens_at_once() {
     let (fx, server) = connected();
     set_confirm_delete(&fx, false);
     fx.app.send(Command::Delete {
+        pane: PaneId::Remote,
         names: vec!["a.txt".into()],
     });
     fx.wait_for("the deletion", |s| !names(s).contains(&"a.txt".to_owned()));
@@ -152,9 +157,13 @@ fn without_confirm_delete_the_deletion_happens_at_once() {
 fn unknown_names_are_ignored_and_an_empty_selection_asks_nothing() {
     let (fx, server) = connected();
     fx.app.send(Command::Delete {
+        pane: PaneId::Remote,
         names: vec!["not-in-this-pane".into()],
     });
-    fx.app.send(Command::Delete { names: vec![] });
+    fx.app.send(Command::Delete {
+        pane: PaneId::Remote,
+        names: vec![],
+    });
     std::thread::sleep(Duration::from_millis(200));
     assert!(fx.state().prompt.is_none());
     assert!(server.path().join("projects/a.txt").exists());
@@ -166,6 +175,7 @@ fn chmod_changes_the_permissions_of_the_selection() {
     use std::os::unix::fs::PermissionsExt;
     let (fx, server) = connected();
     fx.app.send(Command::Chmod {
+        pane: PaneId::Remote,
         names: vec!["a.txt".into(), "b.txt".into()],
         mode: 0o600,
     });
@@ -187,7 +197,10 @@ fn chmod_changes_the_permissions_of_the_selection() {
 fn failures_become_a_notice_without_changing_the_pane() {
     let (fx, _server) = connected();
     let before = fx.state();
-    fx.app.send(Command::Mkdir { name: "sub".into() }); // already exists
+    fx.app.send(Command::Mkdir {
+        pane: PaneId::Remote,
+        name: "sub".into(),
+    }); // already exists
     let state = fx.wait_for("a notice", |s| !s.notices.is_empty());
     assert_eq!(state.notices[0].level, Level::Error);
     assert!(
@@ -197,10 +210,14 @@ fn failures_become_a_notice_without_changing_the_pane() {
     );
     assert_eq!(names(&state), names(&before));
 
-    fx.app.send(Command::Mkdir { name: "a/b".into() });
+    fx.app.send(Command::Mkdir {
+        pane: PaneId::Remote,
+        name: "a/b".into(),
+    });
     let state = fx.wait_for("a notice for the bad name", |s| s.notices.len() >= 2);
     assert!(state.notices[1].text.contains("not a valid file name"));
     fx.app.send(Command::Rename {
+        pane: PaneId::Remote,
         from: "a.txt".into(),
         to: "..".into(),
     });

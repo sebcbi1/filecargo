@@ -92,6 +92,7 @@ impl ChmodDialog {
             }
             FormOutcome::Submit => match self.mode() {
                 Some(mode) => Outcome::Run(vec![Command::Chmod {
+                    pane: PaneId::Remote,
                     names: self.names.clone(),
                     mode,
                 }]),
@@ -196,7 +197,7 @@ mod tests {
             panic!()
         };
         assert!(
-            matches!(&commands[..], [Command::Chmod { names, mode: 0o600 }] if names.len() == 2)
+            matches!(&commands[..], [Command::Chmod { names, mode: 0o600, .. }] if names.len() == 2)
         );
         dialog.on_key(key(KeyCode::Char('9')));
         assert!(matches!(dialog.on_key(key(KeyCode::Enter)), Outcome::Keep));

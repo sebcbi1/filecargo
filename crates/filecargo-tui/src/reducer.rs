@@ -309,7 +309,10 @@ fn files_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command
             if names.is_empty() {
                 Vec::new()
             } else {
-                vec![Command::Delete { names }]
+                vec![Command::Delete {
+                    pane: PaneId::Remote,
+                    names,
+                }]
             }
         }
         Action::GoTo => {
@@ -1293,12 +1296,12 @@ mod tests {
         ui.remote.cursor = 1; // html/
         assert_eq!(
             commands(&on_event(&mut ui, &app, key(KeyCode::F(8)))),
-            [r#"Delete { names: ["html"] }"#]
+            [r#"Delete { pane: Remote, names: ["html"] }"#]
         );
         ui.remote.selected = ["index.php".to_owned(), "style.css".to_owned()].into();
         assert_eq!(
             commands(&on_event(&mut ui, &app, key(KeyCode::Delete))),
-            [r#"Delete { names: ["index.php", "style.css"] }"#]
+            [r#"Delete { pane: Remote, names: ["index.php", "style.css"] }"#]
         );
     }
 
@@ -1808,7 +1811,7 @@ mod dialog_tests {
         type_text(&mut ui, &app, "new");
         let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
         assert!(
-            matches!(&commands[..], [Command::Mkdir { name }] if name == "new"),
+            matches!(&commands[..], [Command::Mkdir { name, .. }] if name == "new"),
             "{commands:?}"
         );
 
@@ -1824,7 +1827,7 @@ mod dialog_tests {
         type_text(&mut ui, &app, "x");
         let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
         assert!(
-            matches!(&commands[..], [Command::Rename { from, to }] if from == "index.php" && to == "index.phpx"),
+            matches!(&commands[..], [Command::Rename { from, to, .. }] if from == "index.php" && to == "index.phpx"),
             "{commands:?}"
         );
 

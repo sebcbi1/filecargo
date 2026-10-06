@@ -78,12 +78,16 @@ impl InputDialog {
                         node: *node,
                         name: value,
                     }),
-                    InputPurpose::Mkdir => Command::Mkdir { name: value },
+                    InputPurpose::Mkdir => Command::Mkdir {
+                        pane: PaneId::Remote,
+                        name: value,
+                    },
                     InputPurpose::GoTo { pane } => Command::Navigate {
                         pane: *pane,
                         path: value,
                     },
                     InputPurpose::RenameRemote { from } => Command::Rename {
+                        pane: PaneId::Remote,
                         from: from.clone(),
                         to: value,
                     },
@@ -617,7 +621,10 @@ mod tests {
         dialog.on_key(key(KeyCode::Char('x')));
         same!(
             dialog.on_key(key(KeyCode::Enter)),
-            Outcome::Run(vec![Command::Mkdir { name: "ax".into() }])
+            Outcome::Run(vec![Command::Mkdir {
+                pane: PaneId::Remote,
+                name: "ax".into()
+            }])
         );
 
         let mut rename = Dialog::Input(InputDialog::new(
@@ -632,6 +639,7 @@ mod tests {
         same!(
             rename.on_key(key(KeyCode::Enter)),
             Outcome::Run(vec![Command::Rename {
+                pane: PaneId::Remote,
                 from: "old.txt".into(),
                 to: "old.txt2".into()
             }])

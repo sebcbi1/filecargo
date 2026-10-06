@@ -483,7 +483,7 @@ impl Core {
             command @ (Command::Mkdir { .. }
             | Command::Rename { .. }
             | Command::Delete { .. }
-            | Command::Chmod { .. }) => self.remote_operation(command),
+            | Command::Chmod { .. }) => self.file_operation(command),
             Command::Upload { names } => self.start_transfers(Direction::Upload, &names),
             Command::Download { names } => self.start_transfers(Direction::Download, &names),
             command @ (Command::QueueRetry(_)

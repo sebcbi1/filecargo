@@ -618,7 +618,10 @@ impl FilePaneView {
         }
         let model = self.model.clone();
         crate::dialogs::tree_ops::ask_name(window, cx, "New remote folder", "", move |name, cx| {
-            model.read(cx).send(Command::Mkdir { name });
+            model.read(cx).send(Command::Mkdir {
+                pane: PaneId::Remote,
+                name,
+            });
         });
     }
 
@@ -632,6 +635,7 @@ impl FilePaneView {
         let (model, from) = (self.model.clone(), from.clone());
         crate::dialogs::tree_ops::ask_name(window, cx, "Rename", &from.clone(), move |to, cx| {
             model.read(cx).send(Command::Rename {
+                pane: PaneId::Remote,
                 from: from.clone(),
                 to,
             });
@@ -645,7 +649,10 @@ impl FilePaneView {
         }
         let names = self.target_names(cx);
         if !names.is_empty() {
-            self.model.read(cx).send(Command::Delete { names });
+            self.model.read(cx).send(Command::Delete {
+                pane: PaneId::Remote,
+                names,
+            });
         }
     }
 
