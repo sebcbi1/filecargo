@@ -238,6 +238,7 @@ pub fn busy_queue() -> QueueSnapshot {
         ],
         failed: vec![failed],
         processing: true,
+        paused_sites: Default::default(),
         totals: Totals {
             bytes_done: 11_000_000,
             bytes_total: 26_000_000,
@@ -324,6 +325,12 @@ pub fn scope_queue(app: &mut AppState, queue: QueueSnapshot, scope: Option<SiteI
         completed: only(&queue.completed),
         failed: only(&queue.failed),
         processing: queue.processing,
+        paused_sites: queue
+            .paused_sites
+            .iter()
+            .copied()
+            .filter(|s| Some(*s) == scope)
+            .collect(),
         totals: queue.totals.clone(),
     });
     app.scope = scope;

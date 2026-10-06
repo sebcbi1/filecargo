@@ -1,7 +1,7 @@
 //! The single task that owns the queue. Workers run elsewhere and report back through a
 //! channel, so no lock guards any queue state and every invariant lives in this file.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -38,6 +38,10 @@ pub(crate) enum Command {
     RetryAllFailed,
     Remove(TransferId),
     ClearCompleted,
+    ClearCompletedSite(filecargo_config::SiteId),
+    ClearFailed(filecargo_config::SiteId),
+    Clear(filecargo_config::SiteId),
+    SetSitePaused(filecargo_config::SiteId, bool),
     SetProcessing(bool),
     SetLimits(QueueLimits),
     Shutdown(oneshot::Sender<()>),
@@ -106,6 +110,7 @@ struct Scheduler {
     store_path: std::path::PathBuf,
     limits: QueueLimits,
     processing: bool,
+    paused_sites: BTreeSet<filecargo_config::SiteId>,
     shared: Arc<Shared>,
     commands: mpsc::UnboundedReceiver<Command>,
     events: mpsc::UnboundedSender<QueueEvent>,
@@ -151,6 +156,7 @@ impl Scheduler {
             store_path: init.store_path,
             limits: init.limits,
             processing: true,
+            paused_sites: BTreeSet::new(),
             shared: init.shared,
             commands: init.commands,
             events: init.events,
@@ -213,6 +219,23 @@ impl Scheduler {
                 self.completed.clear();
                 self.touch(false);
             }
+            Command::ClearCompletedSite(site) => {
+                self.completed.retain(|i| i.site != site);
+                self.touch(false);
+            }
+            Command::ClearFailed(site) => {
+                self.failed.retain(|s| s.item.site != site);
+                self.touch(true);
+            }
+            Command::Clear(site) => self.clear(site),
+            Command::SetSitePaused(site, paused) => {
+                if paused {
+                    self.paused_sites.insert(site);
+                } else {
+                    self.paused_sites.remove(&site);
+                }
+                self.touch(false);
+            }
             Command::SetProcessing(on) => {
                 self.processing = on;
                 self.touch(false);
@@ -265,10 +288,26 @@ impl Scheduler {
                 any = true;
             }
         }
+        // starting a site's queue also resumes it
+        any |= self.paused_sites.remove(&site);
         if any {
             self.was_idle = false;
             self.touch(true);
         }
+    }
+
+    /// Cancels `site`'s running items and drops everything of it that has not finished.
+    fn clear(&mut self, site: filecargo_config::SiteId) {
+        let ids: Vec<TransferId> = self
+            .pending
+            .iter()
+            .filter(|s| s.item.site == site)
+            .map(|s| s.item.id)
+            .collect();
+        for id in ids {
+            self.remove(id);
+        }
+        self.touch(true);
     }
 
     fn resolve(&mut self, id: TransferId, decision: ConflictDecision) {
@@ -340,7 +379,9 @@ impl Scheduler {
         let now = Instant::now();
         while self.active.len() < usize::from(self.limits.max_concurrent.max(1)) {
             let Some(index) = self.pending.iter().position(|s| {
-                matches!(s.item.state, ItemState::Pending) && s.retry_at.is_none_or(|at| at <= now)
+                matches!(s.item.state, ItemState::Pending)
+                    && !self.paused_sites.contains(&s.item.site)
+                    && s.retry_at.is_none_or(|at| at <= now)
             }) else {
                 break;
             };
@@ -671,6 +712,7 @@ impl Scheduler {
             completed: self.completed.iter().map(finished_view).collect(),
             failed: self.failed.iter().map(|s| finished_view(&s.item)).collect(),
             processing: self.processing,
+            paused_sites: self.paused_sites.clone(),
             totals: self.totals(now),
         };
         let _ = self.snapshot.send(Arc::new(snapshot));

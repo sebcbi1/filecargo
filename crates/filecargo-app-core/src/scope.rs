@@ -55,6 +55,12 @@ pub(crate) fn scoped(full: &QueueSnapshot, scope: Option<SiteId>) -> QueueSnapsh
         completed: only(site, &full.completed),
         failed: only(site, &full.failed),
         processing: full.processing,
+        paused_sites: full
+            .paused_sites
+            .iter()
+            .copied()
+            .filter(|s| *s == site)
+            .collect(),
         totals: Totals {
             bytes_done: done,
             bytes_total: total,

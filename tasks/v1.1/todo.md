@@ -193,12 +193,12 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - `clear_failed(site)` and a site-scoped `clear_completed(site)`.
 - The snapshot exposes `paused_sites`.
 **Acceptance:**
-- [ ] With A paused, B keeps scheduling.
-- [ ] After `clear(A)`, A has no pending, held or active items, B is untouched, and A's partial
+- [x] With A paused, B keeps scheduling.
+- [x] After `clear(A)`, A has no pending, held or active items, B is untouched, and A's partial
   file is still on disk.
-- [ ] `clear_failed(A)` removes A's failed items only.
+- [x] `clear_failed(A)` removes A's failed items only.
 **Verify:**
-- [ ] `cargo test -p filecargo-transfer --test scheduler --test resume`
+- [x] `cargo test -p filecargo-transfer --test scheduler --test resume`
 **Dependencies:** T9
 **Files:** `crates/filecargo-transfer/src/{queue,scheduler}.rs`, `crates/filecargo-transfer/tests/scheduler.rs`
 **Scope:** M

@@ -1,5 +1,6 @@
 //! The public face of the queue: the handle, the traits it needs, and what it reports.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -85,7 +86,10 @@ pub struct QueueSnapshot {
     /// Newest first, capped at 1,000.
     pub completed: Vec<QueueItemView>,
     pub failed: Vec<QueueItemView>,
+    /// The global switch of [`Queue::set_processing`].
     pub processing: bool,
+    /// Sites whose items are not started ([`Queue::set_site_paused`]).
+    pub paused_sites: BTreeSet<SiteId>,
     pub totals: Totals,
 }
 
@@ -185,6 +189,27 @@ impl Queue {
 
     pub fn clear_completed(&self) {
         self.send(Command::ClearCompleted);
+    }
+
+    /// Clears the completed items of one site.
+    pub fn clear_completed_site(&self, site: SiteId) {
+        self.send(Command::ClearCompletedSite(site));
+    }
+
+    /// Removes the failed items of one site.
+    pub fn clear_failed(&self, site: SiteId) {
+        self.send(Command::ClearFailed(site));
+    }
+
+    /// Cancels the site's active items (partial files stay, so a later transfer can resume them)
+    /// and removes its pending, held and waiting items. Other sites are not affected.
+    pub fn clear(&self, site: SiteId) {
+        self.send(Command::Clear(site));
+    }
+
+    /// A paused site starts no new items; its running ones finish. Other sites are not affected.
+    pub fn set_site_paused(&self, site: SiteId, paused: bool) {
+        self.send(Command::SetSitePaused(site, paused));
     }
 
     /// Pauses or resumes *starting* new items; running ones finish.
