@@ -85,7 +85,7 @@ impl BottomPanel {
     }
 
     fn sync(&mut self, cx: &mut Context<Self>) {
-        let queue = self.model.read(cx).state.queue.clone();
+        let queue = self.model.read(cx).state.site_queue.clone();
         let changed = self
             .shown
             .as_ref()
@@ -101,7 +101,11 @@ impl BottomPanel {
             self.shown = Some(queue);
         }
         // the log tab redraws on every snapshot (its generation is part of the state)
-        self.log.update(cx, |_, cx| cx.notify());
+        let scope = self.model.read(cx).state.scope;
+        self.log.update(cx, |log, cx| {
+            log.scope = scope;
+            cx.notify();
+        });
         cx.notify();
     }
 
@@ -130,7 +134,7 @@ impl BottomPanel {
 
 impl Render for BottomPanel {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let queue = self.model.read(cx).state.queue.clone();
+        let queue = self.model.read(cx).state.site_queue.clone();
         let label = |name: &str, count: usize| {
             if count == 0 {
                 name.to_owned()

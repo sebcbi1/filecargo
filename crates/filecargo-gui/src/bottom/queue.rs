@@ -13,7 +13,7 @@ use gpui_kit::{
     Window, div, px, relative,
 };
 
-use crate::format::{format_size, format_time};
+use crate::format::{format_size, format_time, truncate_left};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListKind {
@@ -27,22 +27,46 @@ impl ListKind {
         match self {
             Self::Queue => &[
                 ("", 28.0),
-                ("Name", 240.0),
-                ("Progress", 160.0),
-                ("Done", 130.0),
+                ("Local", 250.0),
+                ("Remote", 250.0),
+                ("Progress", 150.0),
+                ("Done", 120.0),
                 ("Speed", 80.0),
                 ("ETA", 60.0),
             ],
             Self::Completed => &[
                 ("", 28.0),
-                ("Name", 240.0),
-                ("Result", 200.0),
-                ("Size", 80.0),
-                ("Finished", 140.0),
+                ("Local", 250.0),
+                ("Remote", 250.0),
+                ("Result", 150.0),
+                ("Size", 70.0),
+                ("Finished", 130.0),
             ],
-            Self::Failed => &[("", 28.0), ("Name", 240.0), ("Reason", 380.0), ("", 70.0)],
+            Self::Failed => &[
+                ("", 28.0),
+                ("Local", 250.0),
+                ("Remote", 250.0),
+                ("Reason", 300.0),
+                ("", 70.0),
+            ],
         }
     }
+}
+
+/// The column titles of a list, in order.
+pub fn column_names(kind: ListKind) -> Vec<&'static str> {
+    kind.columns().iter().map(|(name, _)| *name).collect()
+}
+
+/// Characters of a path column; longer paths lose their left side.
+const PATH_CHARS: usize = 38;
+
+/// The local and the remote path of an item, as the two path columns show them.
+pub fn row_paths(item: &QueueItem) -> (String, String) {
+    (
+        truncate_left(&item.local.display().to_string(), PATH_CHARS),
+        truncate_left(item.remote.as_str(), PATH_CHARS),
+    )
 }
 
 pub struct QueueDelegate {
@@ -155,11 +179,14 @@ impl TableDelegate for QueueDelegate {
             };
             return Icon::new(icon).small().text_color(muted).into_any_element();
         }
-        if col_ix == 1 {
-            return div().child(display_name(item)).into_any_element();
+        if col_ix <= 2 {
+            let (local, remote) = row_paths(item);
+            return div()
+                .child(if col_ix == 1 { local } else { remote })
+                .into_any_element();
         }
         match (self.kind, col_ix) {
-            (ListKind::Queue, 2) => match &item.state {
+            (ListKind::Queue, 3) => match &item.state {
                 ItemState::Active { .. } => match fraction(item) {
                     Some(done) => h_flex()
                         .gap_2()
@@ -188,7 +215,7 @@ impl TableDelegate for QueueDelegate {
                     .into_any_element(),
                 _ => div().text_color(muted).child("queued").into_any_element(),
             },
-            (ListKind::Queue, 3) => match (&item.state, item.size) {
+            (ListKind::Queue, 4) => match (&item.state, item.size) {
                 (ItemState::Active { .. }, Some(total)) => div()
                     .child(format!(
                         "{}/{}",
@@ -205,39 +232,39 @@ impl TableDelegate for QueueDelegate {
                     .into_any_element(),
                 _ => div().into_any_element(),
             },
-            (ListKind::Queue, 4) => div()
+            (ListKind::Queue, 5) => div()
                 .child(
                     view.rate
                         .map(|r| format!("{}/s", format_size(r as u64)))
                         .unwrap_or_default(),
                 )
                 .into_any_element(),
-            (ListKind::Queue, 5) => div()
+            (ListKind::Queue, 6) => div()
                 .child(view.eta.map(format_duration).unwrap_or_default())
                 .into_any_element(),
-            (ListKind::Completed, 2) => match &item.state {
+            (ListKind::Completed, 3) => match &item.state {
                 ItemState::Completed { outcome, .. } => {
                     div().child(outcome_text(outcome)).into_any_element()
                 }
                 _ => div().into_any_element(),
             },
-            (ListKind::Completed, 3) => div()
+            (ListKind::Completed, 4) => div()
                 .child(item.size.map(format_size).unwrap_or_default())
                 .into_any_element(),
-            (ListKind::Completed, 4) => match &item.state {
+            (ListKind::Completed, 5) => match &item.state {
                 ItemState::Completed { finished, .. } => {
                     div().child(format_time(Some(*finished))).into_any_element()
                 }
                 _ => div().into_any_element(),
             },
-            (ListKind::Failed, 2) => match &item.state {
+            (ListKind::Failed, 3) => match &item.state {
                 ItemState::Failed { reason, .. } => div()
                     .text_color(cx.theme().danger)
                     .child(reason.clone())
                     .into_any_element(),
                 _ => div().into_any_element(),
             },
-            (ListKind::Failed, 3) => match &item.state {
+            (ListKind::Failed, 4) => match &item.state {
                 ItemState::Failed { retryable, .. } => div()
                     .text_color(muted)
                     .child(if *retryable { "retry" } else { "final" })

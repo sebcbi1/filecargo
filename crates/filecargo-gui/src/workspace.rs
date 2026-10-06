@@ -16,7 +16,7 @@ use crate::model::AppModel;
 use crate::notices::NoticeHost;
 use crate::pane::FilePaneView;
 use crate::prompts::PromptHost;
-use crate::toolbar::session_label;
+use crate::toolbar::{other_sites_label, session_label};
 use crate::tree::ServerTreeView;
 
 gpui_kit::actions!(
@@ -74,6 +74,11 @@ impl Workspace {
             _observe,
             _observe_tree,
         }
+    }
+
+    /// The toolbar's "N transfers on other sites", while any run.
+    pub fn other_sites_hint(&self, cx: &gpui_kit::App) -> Option<String> {
+        other_sites_label(self.model.read(cx).state.other_sites_active)
     }
 
     fn focused_view(&self) -> Entity<FilePaneView> {
@@ -264,6 +269,13 @@ impl Workspace {
                     })),
             )
             .child(div().flex_1())
+            .children(other_sites_label(state.other_sites_active).map(|text| {
+                div()
+                    .id("other-sites")
+                    .text_sm()
+                    .text_color(cx.theme().warning)
+                    .child(text)
+            }))
             .child(
                 div()
                     .text_sm()

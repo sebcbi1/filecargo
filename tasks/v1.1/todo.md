@@ -148,19 +148,19 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - The toolbar shows the other-sites hint.
 - The tab labels count scoped items.
 **Acceptance:**
-- [ ] A headless test: items for A and B, connected to A, show only A's rows, and both path
+- [x] A headless test: items for A and B, connected to A, show only A's rows, and both path
   columns render.
-- [ ] Disconnected shows empty tables.
-- [ ] The hint text is present when B is active.
+- [x] Disconnected shows empty tables.
+- [x] The hint text is present when B is active.
 **Verify:**
-- [ ] `nix-shell --run "cargo test -p filecargo-gui"`
+- [x] `nix-shell --run "cargo test -p filecargo-gui"`
 **Dependencies:** T6
 **Files:** `crates/filecargo-gui/src/bottom/{mod,queue,log}.rs`, `crates/filecargo-gui/src/toolbar.rs`, `crates/filecargo-gui/tests/transfers.rs`
 **Scope:** M
 
 ### Checkpoint B
-- [ ] Full suite green.
-- [ ] Manual: B transfers in the background while connected to A, and the panel shows only A.
+- [x] Full suite green.
+- [ ] (pending, manual) B transfers in the background while connected to A, and the panel shows only A.
 - [ ] Human review: pending.
 
 ---

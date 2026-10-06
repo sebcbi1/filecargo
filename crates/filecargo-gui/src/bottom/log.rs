@@ -12,6 +12,8 @@ use crate::format::format_time;
 
 pub struct LogView {
     log: LogBuffer,
+    /// The site whose lines show besides the app-wide ones; `None` when not connected.
+    pub scope: Option<SiteId>,
     pub scroll: UniformListScrollHandle,
     /// Lines the view has shown (to scroll when more arrive).
     shown: usize,
@@ -22,18 +24,20 @@ impl LogView {
     pub fn new(log: LogBuffer) -> Self {
         Self {
             log,
+            scope: None,
             scroll: UniformListScrollHandle::default(),
             shown: 0,
             follow: true,
         }
     }
 
+    /// Lines on show: the scope's and the app-wide ones.
     pub fn len(&self) -> usize {
-        self.log.len()
+        self.log.lines_for(self.scope).len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.log.is_empty()
+        self.len() == 0
     }
 }
 
@@ -50,13 +54,13 @@ fn level_label(level: LogLevel) -> &'static str {
 
 impl Render for LogView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let count = self.log.len();
+        let lines = std::sync::Arc::new(self.log.lines_for(self.scope));
+        let count = lines.len();
         if self.follow && count > 0 {
             self.scroll
                 .scroll_to_item(count - 1, ScrollStrategy::Bottom);
         }
         self.shown = count;
-        let log = self.log.clone();
         let theme = cx.theme().clone();
         div()
             .size_full()
@@ -72,7 +76,7 @@ impl Render for LogView {
             }))
             .child(
                 uniform_list("log-lines", count, move |range, _window, _cx| {
-                    log.with_lines(|lines| {
+                    {
                         lines
                             .iter()
                             .skip(range.start)
@@ -104,7 +108,7 @@ impl Render for LogView {
                                     .child(div().flex_1().child(line.message.clone()))
                             })
                             .collect()
-                    })
+                    }
                 })
                 .track_scroll(&self.scroll)
                 .size_full(),

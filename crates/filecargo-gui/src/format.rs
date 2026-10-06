@@ -22,6 +22,19 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
+/// `text` cut to `width` characters from the left: `…html/index.php`.
+pub fn truncate_left(text: &str, width: usize) -> String {
+    let count = text.chars().count();
+    if count <= width {
+        return text.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let tail: String = text.chars().skip(count - (width - 1)).collect();
+    format!("…{tail}")
+}
+
 /// `2026-10-01 14:02` (UTC).
 pub fn format_time(time: Option<SystemTime>) -> String {
     let Some(time) = time else {
@@ -71,6 +84,17 @@ pub fn format_permissions(mode: Option<u32>, is_dir: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paths_lose_their_left_side_when_too_long() {
+        assert_eq!(truncate_left("/www/index.php", 20), "/www/index.php");
+        assert_eq!(
+            truncate_left("/var/www/html/index.php", 15),
+            "…html/index.php"
+        );
+        assert_eq!(truncate_left("é/é/éééé", 5), "…éééé");
+        assert_eq!(truncate_left("abc", 0), "");
+    }
 
     #[test]
     fn sizes_times_and_permissions() {

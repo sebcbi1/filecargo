@@ -2,6 +2,15 @@
 
 use filecargo_app_core::prelude::*;
 
+/// The toolbar hint while other sites keep transferring in the background.
+pub fn other_sites_label(active: usize) -> Option<String> {
+    match active {
+        0 => None,
+        1 => Some("1 transfer on other sites".to_owned()),
+        n => Some(format!("{n} transfers on other sites")),
+    }
+}
+
 /// What the indicator at the right of the toolbar says for the session.
 pub fn session_label(state: &AppState) -> String {
     let name = |site: SiteId| {
@@ -64,6 +73,19 @@ mod tests {
             notices: Vec::new(),
             log_generation: 0,
         }
+    }
+
+    #[test]
+    fn the_hint_counts_transfers_on_other_sites() {
+        assert_eq!(other_sites_label(0), None);
+        assert_eq!(
+            other_sites_label(1).as_deref(),
+            Some("1 transfer on other sites")
+        );
+        assert_eq!(
+            other_sites_label(3).as_deref(),
+            Some("3 transfers on other sites")
+        );
     }
 
     #[test]
