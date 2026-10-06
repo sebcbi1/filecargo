@@ -50,7 +50,7 @@ jobs:
           name="filecargo-${GITHUB_REF_NAME}-${{ matrix.name }}"
           mkdir "$name"
           exe=""; [ "${{ runner.os }}" = "Windows" ] && exe=".exe"
-          cp "target/release/filecargo$exe" "target/release/filecargo-tui$exe" README.md "$name/"
+          cp "target/release/filecargo$exe" "target/release/filecargo-tui$exe" README.md LICENSE-MIT LICENSE-APACHE "$name/"
           if [ "${{ matrix.ext }}" = "zip" ]; then
             7z a "$name.zip" "$name" > /dev/null
           else

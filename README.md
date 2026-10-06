@@ -73,4 +73,5 @@ Manual smoke checklists: `crates/filecargo-tui/SMOKE.md`, `crates/filecargo-gui/
 
 ## License
 
-No license has been chosen yet; add a `LICENSE` file before publishing binaries.
+Licensed under either of [Apache License 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT) at your option.
+Unless you state otherwise, any contribution you submit is dual-licensed as above, without further terms.
