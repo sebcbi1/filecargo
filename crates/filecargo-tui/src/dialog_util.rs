@@ -22,12 +22,13 @@ const BITS: [(&str, &str, u32); 9] = [
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChmodDialog {
+    pub pane: PaneId,
     pub form: Form,
     pub names: Vec<String>,
 }
 
 impl ChmodDialog {
-    pub fn new(names: Vec<String>, mode: u32) -> Self {
+    pub fn new(pane: PaneId, names: Vec<String>, mode: u32) -> Self {
         let mut fields = vec![Field::text(
             "octal",
             "Octal",
@@ -38,6 +39,7 @@ impl ChmodDialog {
                 .map(|(id, label, bit)| Field::checkbox(id, label, mode & bit != 0)),
         );
         Self {
+            pane,
             form: Form::new(fields),
             names,
         }
@@ -92,7 +94,7 @@ impl ChmodDialog {
             }
             FormOutcome::Submit => match self.mode() {
                 Some(mode) => Outcome::Run(vec![Command::Chmod {
-                    pane: PaneId::Remote,
+                    pane: self.pane,
                     names: self.names.clone(),
                     mode,
                 }]),
@@ -160,7 +162,7 @@ mod tests {
 
     #[test]
     fn the_boxes_follow_the_initial_mode() {
-        let dialog = ChmodDialog::new(vec!["a".into()], 0o640);
+        let dialog = ChmodDialog::new(PaneId::Remote, vec!["a".into()], 0o640);
         assert_eq!(dialog.form.text_of("octal"), "640");
         assert!(checked(&dialog, "ur") && checked(&dialog, "uw") && !checked(&dialog, "ux"));
         assert!(checked(&dialog, "gr") && !checked(&dialog, "gw"));
@@ -169,7 +171,7 @@ mod tests {
 
     #[test]
     fn typing_octal_updates_the_boxes_and_a_box_updates_the_octal() {
-        let mut dialog = ChmodDialog::new(vec!["a".into()], 0o644);
+        let mut dialog = ChmodDialog::new(PaneId::Remote, vec!["a".into()], 0o644);
         dialog.on_key(key(KeyCode::Char('x'))); // invalid: ignored by the boxes
         assert_eq!(dialog.mode(), None);
         dialog.on_key(key(KeyCode::Backspace));
@@ -192,7 +194,7 @@ mod tests {
 
     #[test]
     fn enter_runs_chmod_on_the_names_and_a_bad_octal_is_refused() {
-        let mut dialog = ChmodDialog::new(vec!["a".into(), "b".into()], 0o600);
+        let mut dialog = ChmodDialog::new(PaneId::Remote, vec!["a".into(), "b".into()], 0o600);
         let Outcome::Run(commands) = dialog.on_key(key(KeyCode::Enter)) else {
             panic!()
         };
@@ -210,7 +212,7 @@ mod tests {
 
     #[test]
     fn special_bits_typed_in_octal_survive_a_box_toggle() {
-        let mut dialog = ChmodDialog::new(vec!["a".into()], 0o644);
+        let mut dialog = ChmodDialog::new(PaneId::Remote, vec!["a".into()], 0o644);
         dialog.on_key(key(KeyCode::Home));
         dialog.on_key(key(KeyCode::Char('1'))); // 1644: sticky
         assert_eq!(dialog.mode(), Some(0o1644));

@@ -303,14 +303,14 @@ fn files_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command
             }
             commands
         }
-        Action::Delete if focus == Focus::Remote => {
+        Action::Delete => {
             let pane = ui.pane(focus).cloned().unwrap_or_default();
             let names = target_names(&pane, &view);
             if names.is_empty() {
                 Vec::new()
             } else {
                 vec![Command::Delete {
-                    pane: PaneId::Remote,
+                    pane: view.id,
                     names,
                 }]
             }
@@ -324,35 +324,49 @@ fn files_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command
             )));
             Vec::new()
         }
-        Action::Chmod if focus == Focus::Remote => {
+        Action::Chmod => {
             let pane = ui.pane(focus).cloned().unwrap_or_default();
             let names = target_names(&pane, &view);
             let mode = view
                 .entry(pane.cursor)
                 .and_then(|e| e.permissions)
                 .unwrap_or(0o644);
-            if !names.is_empty() {
-                ui.dialog = Some(Dialog::Chmod(ChmodDialog::new(names, mode)));
+            if names.is_empty() {
+                return Vec::new();
             }
+            if view.id == PaneId::Local && cfg!(windows) {
+                // the app answers with a notice, which the status line shows
+                return vec![Command::Chmod {
+                    pane: view.id,
+                    names,
+                    mode,
+                }];
+            }
+            ui.dialog = Some(Dialog::Chmod(ChmodDialog::new(view.id, names, mode)));
             Vec::new()
         }
-        Action::MakeDir if focus == Focus::Remote => {
+        Action::MakeDir => {
+            let title = match view.id {
+                PaneId::Local => "New local folder",
+                PaneId::Remote => "New remote folder",
+            };
             ui.dialog = Some(Dialog::Input(InputDialog::new(
-                "New remote folder",
+                title,
                 "Name",
                 "",
-                InputPurpose::Mkdir,
+                InputPurpose::Mkdir { pane: view.id },
             )));
             Vec::new()
         }
-        Action::Rename if focus == Focus::Remote => {
+        Action::Rename => {
             let cursor = ui.pane(focus).map_or(0, |p| p.cursor);
             if let Some(entry) = view.entry(cursor) {
                 ui.dialog = Some(Dialog::Input(InputDialog::new(
                     "Rename",
                     "New name",
                     &entry.name,
-                    InputPurpose::RenameRemote {
+                    InputPurpose::RenameEntry {
+                        pane: view.id,
                         from: entry.name.clone(),
                     },
                 )));
@@ -1285,12 +1299,22 @@ mod tests {
     }
 
     #[test]
-    fn delete_applies_to_the_remote_pane_only() {
+    fn delete_acts_on_the_focused_pane() {
         let app = connected_app();
         let mut ui = synced(100, 30, &app);
         assert!(
             on_event(&mut ui, &app, key(KeyCode::Delete)).is_empty(),
-            "the local pane is browse-only"
+            "`..` is not deletable"
+        );
+        ui.local.cursor = 2; // src/
+        assert_eq!(
+            commands(&on_event(&mut ui, &app, key(KeyCode::Delete))),
+            [r#"Delete { pane: Local, names: ["src"] }"#]
+        );
+        ui.local.selected = ["notes.txt".to_owned(), "README.md".to_owned()].into();
+        assert_eq!(
+            commands(&on_event(&mut ui, &app, key(KeyCode::F(8)))),
+            [r#"Delete { pane: Local, names: ["README.md", "notes.txt"] }"#]
         );
         ui.focus = Focus::Remote;
         ui.remote.cursor = 1; // html/
@@ -1802,7 +1826,7 @@ mod dialog_tests {
     }
 
     #[test]
-    fn f7_and_f2_on_the_remote_pane_open_input_dialogs_and_do_nothing_locally() {
+    fn f7_and_f2_open_input_dialogs_for_the_focused_pane() {
         let app = connected_app();
         let mut ui = synced(100, 30, &app);
         ui.focus = Focus::Remote;
@@ -1832,10 +1856,20 @@ mod dialog_tests {
         );
 
         ui.focus = Focus::Local;
+        ui.local.cursor = 3; // README.md
         on_event(&mut ui, &app, key(KeyCode::F(7)));
+        type_text(&mut ui, &app, "loc");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
         assert!(
-            ui.dialog.is_none(),
-            "the local pane has no remote operations"
+            matches!(&commands[..], [Command::Mkdir { pane: PaneId::Local, name }] if name == "loc"),
+            "{commands:?}"
+        );
+        on_event(&mut ui, &app, key(KeyCode::F(2)));
+        type_text(&mut ui, &app, "2");
+        let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+        assert!(
+            matches!(&commands[..], [Command::Rename { pane: PaneId::Local, from, to }] if from == "README.md" && to == "README.md2"),
+            "{commands:?}"
         );
     }
 
@@ -2008,8 +2042,30 @@ mod prompt_tests {
         );
 
         ui.focus = Focus::Local;
+        ui.local.cursor = 3;
         on_event(&mut ui, &app, ch('c'));
-        assert!(ui.dialog.is_none(), "chmod is remote-only");
+        if cfg!(windows) {
+            assert!(ui.dialog.is_none(), "no permissions dialog on Windows");
+        } else {
+            let Some(Dialog::Chmod(chmod)) = &ui.dialog else {
+                panic!()
+            };
+            assert_eq!(
+                (chmod.pane, chmod.names.as_slice()),
+                (PaneId::Local, ["README.md".to_owned()].as_slice())
+            );
+            let commands = on_event(&mut ui, &app, key(KeyCode::Enter));
+            assert!(
+                matches!(
+                    &commands[..],
+                    [Command::Chmod {
+                        pane: PaneId::Local,
+                        ..
+                    }]
+                ),
+                "{commands:?}"
+            );
+        }
         on_event(&mut ui, &app, ch('g'));
         assert!(
             matches!(ui.dialog, Some(Dialog::Input(_))),
@@ -2656,9 +2712,9 @@ mod binding_table_tests {
             "invert the selection",
             "select all",
             "transfer the selection",
-            "new remote folder",
-            "rename (remote)",
-            "delete (remote)",
+            "new folder (current pane)",
+            "rename (current pane)",
+            "delete (current pane)",
             "change permissions",
             "show / hide dotfiles",
             "cycle the sort order",

@@ -24,8 +24,11 @@ pub enum InputPurpose {
         parent: Option<FolderId>,
     },
     RenameNode(NodeId),
-    Mkdir,
-    RenameRemote {
+    Mkdir {
+        pane: PaneId,
+    },
+    RenameEntry {
+        pane: PaneId,
         from: String,
     },
     /// A path, so it may contain `/`.
@@ -78,16 +81,16 @@ impl InputDialog {
                         node: *node,
                         name: value,
                     }),
-                    InputPurpose::Mkdir => Command::Mkdir {
-                        pane: PaneId::Remote,
+                    InputPurpose::Mkdir { pane } => Command::Mkdir {
+                        pane: *pane,
                         name: value,
                     },
                     InputPurpose::GoTo { pane } => Command::Navigate {
                         pane: *pane,
                         path: value,
                     },
-                    InputPurpose::RenameRemote { from } => Command::Rename {
-                        pane: PaneId::Remote,
+                    InputPurpose::RenameEntry { pane, from } => Command::Rename {
+                        pane: *pane,
                         from: from.clone(),
                         to: value,
                     },
@@ -609,7 +612,9 @@ mod tests {
             "New folder",
             "Name",
             "",
-            InputPurpose::Mkdir,
+            InputPurpose::Mkdir {
+                pane: PaneId::Local,
+            },
         ));
         same!(dialog.on_key(key(KeyCode::Enter)), Outcome::Keep);
         assert_eq!(error_of(&dialog), Some("The name cannot be empty."));
@@ -622,7 +627,7 @@ mod tests {
         same!(
             dialog.on_key(key(KeyCode::Enter)),
             Outcome::Run(vec![Command::Mkdir {
-                pane: PaneId::Remote,
+                pane: PaneId::Local,
                 name: "ax".into()
             }])
         );
@@ -631,7 +636,8 @@ mod tests {
             "Rename",
             "Name",
             "old.txt",
-            InputPurpose::RenameRemote {
+            InputPurpose::RenameEntry {
+                pane: PaneId::Remote,
                 from: "old.txt".into(),
             },
         ));

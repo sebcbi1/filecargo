@@ -239,7 +239,9 @@ fn an_input_dialog_shows_the_cursor_in_the_text() {
             "Rename",
             "New name",
             "index.php",
-            InputPurpose::Mkdir,
+            InputPurpose::Mkdir {
+                pane: filecargo_app_core::prelude::PaneId::Remote,
+            },
         )),
     );
     insta::assert_snapshot!(draw(&ui, &app));
@@ -321,7 +323,11 @@ fn chmod_go_to_and_import_dialogs_are_drawn() {
     use crate::dialog_util::{ChmodDialog, ImportDialog};
     use filecargo_app_core::prelude::PaneId;
     let app = connected_app();
-    let chmod = Dialog::Chmod(ChmodDialog::new(vec!["index.php".into()], 0o644));
+    let chmod = Dialog::Chmod(ChmodDialog::new(
+        PaneId::Remote,
+        vec!["index.php".into()],
+        0o644,
+    ));
     insta::assert_snapshot!("chmod", draw(&dialog_ui(&app, chmod), &app));
     let goto = Dialog::Input(InputDialog::new(
         "Go to path",

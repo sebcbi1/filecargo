@@ -53,13 +53,13 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - On Windows, `c` on the local pane shows a status hint instead.
 - Help text says "current pane".
 **Acceptance:**
-- [ ] On the local pane, F7, F2 and Del send `pane: Local` commands with the cursor or selection
+- [x] On the local pane, F7, F2 and Del send `pane: Local` commands with the cursor or selection
   names.
-- [ ] `c` opens the permissions dialog for local entries on Unix.
-- [ ] The remote pane is unchanged.
+- [x] `c` opens the permissions dialog for local entries on Unix.
+- [x] The remote pane is unchanged.
 **Verify:**
-- [ ] `cargo test -p filecargo-tui`
-- [ ] Manual: TUI local-pane ops work.
+- [x] `cargo test -p filecargo-tui`
+- [ ] (pending, manual) Manual: TUI local-pane ops work.
 **Dependencies:** T2
 **Files:** `crates/filecargo-tui/src/{reducer,dialog,help}.rs`, snapshots
 **Scope:** S

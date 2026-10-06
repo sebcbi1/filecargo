@@ -76,6 +76,9 @@ pub fn status_hints(ui: &UiState) -> String {
     let text = match ui.focus {
         Focus::Local => hints_for(&[
             (A::Transfer, "upload"),
+            (A::MakeDir, "mkdir"),
+            (A::Rename, "rename"),
+            (A::Delete, "delete"),
             (A::GoTo, "go to"),
             (A::ToggleHidden, "dotfiles"),
             (A::CycleSort, "sort"),
