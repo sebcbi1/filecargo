@@ -5,10 +5,13 @@ mod support;
 use std::time::Duration;
 
 use filecargo_app_core::prelude::*;
-use filecargo_gui::dialogs::{permissions, settings};
+#[cfg(unix)]
+use filecargo_gui::dialogs::permissions;
+use filecargo_gui::dialogs::settings;
 use gpui_kit::test::{TestAppContextExt as _, TestWindowExt as _};
 use gpui_kit::{AppContext as _, TestAppContext};
 use support::Harness;
+#[cfg(unix)]
 use support::factory::TestFactory;
 
 async fn dialog_open(h: &Harness, cx: &mut TestAppContext) {

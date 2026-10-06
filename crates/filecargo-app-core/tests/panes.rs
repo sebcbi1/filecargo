@@ -39,6 +39,18 @@ fn tree() -> tempfile::TempDir {
     dir
 }
 
+/// `\\?\C:\x` → `C:\x`, as the pane shows it.
+fn strip_verbatim(path: std::path::PathBuf) -> std::path::PathBuf {
+    match path.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(rest) if !rest.starts_with("UNC") => rest.into(),
+        _ => path,
+    }
+}
+
+fn canonical(path: &std::path::Path) -> std::path::PathBuf {
+    strip_verbatim(std::fs::canonicalize(path).unwrap())
+}
+
 #[test]
 fn the_start_directory_is_listed_dirs_first_in_natural_order_without_dotfiles() {
     let dir = tree();
@@ -46,7 +58,7 @@ fn the_start_directory_is_listed_dirs_first_in_natural_order_without_dotfiles() 
     let state = fx.wait_for("the first listing", |s| s.local.generation > 0);
     assert_eq!(names(&state), ["docs", "src", "file2.txt", "file10.txt"]);
     assert!(!state.local.loading && state.local.error.is_none());
-    assert_eq!(state.local.path, std::fs::canonicalize(dir.path()).unwrap());
+    assert_eq!(state.local.path, canonical(dir.path()));
 }
 
 #[test]
@@ -87,7 +99,10 @@ fn navigation_accepts_relative_absolute_and_home_paths_and_up_goes_to_the_parent
         s.local.path == root.join("docs") && !s.local.loading
     });
 
-    if let Some(home) = std::env::home_dir().and_then(|h| std::fs::canonicalize(h).ok()) {
+    if let Some(home) = std::env::home_dir()
+        .and_then(|h| std::fs::canonicalize(h).ok())
+        .map(strip_verbatim)
+    {
         fx.app.send(Command::Navigate {
             pane: PaneId::Local,
             path: "~".into(),
