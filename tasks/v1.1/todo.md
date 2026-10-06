@@ -246,11 +246,11 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - Clear failed goes in the Failed tab (`C`, like Clear completed in Completed).
 - Held rows show "queued", and the tab header shows "paused".
 **Acceptance:**
-- [ ] Reducer tests for each key → command.
-- [ ] Snapshots of held rows, the paused header and the clear-confirm dialog.
-- [ ] Help lists the new keys.
+- [x] Reducer tests for each key → command.
+- [x] Snapshots of held rows, the paused header and the clear-confirm dialog.
+- [x] Help lists the new keys.
 **Verify:**
-- [ ] `cargo test -p filecargo-tui`
+- [x] `cargo test -p filecargo-tui`
 **Dependencies:** T12
 **Files:** `crates/filecargo-tui/src/{keymap,reducer,bottom_view,prompt_ui}.rs`, snapshots
 **Scope:** M

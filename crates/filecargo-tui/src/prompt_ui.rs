@@ -327,6 +327,18 @@ mod tests {
             answer(&quit, &[KeyCode::Char('n')]),
             Some(PromptAnswer::Confirm(false))
         ));
+        let clear = PromptKind::ConfirmClearQueue {
+            items: 3,
+            active: 1,
+        };
+        assert!(matches!(
+            answer(&clear, &[KeyCode::Char('y')]),
+            Some(PromptAnswer::Confirm(true))
+        ));
+        assert!(matches!(
+            answer(&clear, &[KeyCode::Esc]),
+            Some(PromptAnswer::Confirm(false))
+        ));
         let message = PromptKind::Message {
             level: Level::Info,
             title: "t".into(),

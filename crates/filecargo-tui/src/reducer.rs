@@ -303,6 +303,22 @@ fn files_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Command
             }
             commands
         }
+        Action::Enqueue => {
+            let pane = ui.pane(focus).cloned().unwrap_or_default();
+            let names = target_names(&pane, &view);
+            let from = match focus {
+                Focus::Local => PaneId::Local,
+                Focus::Remote => PaneId::Remote,
+                _ => return Vec::new(),
+            };
+            if names.is_empty() {
+                return Vec::new();
+            }
+            if let Some(pane) = ui.pane_mut(focus) {
+                pane.selected.clear();
+            }
+            vec![Command::Enqueue { from, names }]
+        }
         Action::Delete => {
             let pane = ui.pane(focus).cloned().unwrap_or_default();
             let names = target_names(&pane, &view);
@@ -691,7 +707,10 @@ fn bottom_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Comman
             ui.bottom.tab = BottomTab::ALL[next];
             Vec::new()
         }
-        Action::QueuePause => vec![Command::QueueSetProcessing(!app.queue.processing)],
+        Action::QueuePause => vec![Command::QueueSetSitePaused(!app.site_paused())],
+        Action::QueueStart if tab == BottomTab::Queue => vec![Command::QueueStartHeld],
+        Action::QueueClearAll if tab == BottomTab::Queue => vec![Command::QueueClear],
+        Action::QueueClear if tab == BottomTab::Failed => vec![Command::QueueClearFailed],
         Action::QueueClear => vec![Command::QueueClearCompleted],
         Action::QueueRetryAll => vec![Command::QueueRetryFailed],
         Action::QueueRemove => item_under_cursor(ui, app)
@@ -1231,6 +1250,28 @@ mod tests {
             commands(&on_event(&mut ui, &app, key(KeyCode::Backspace))),
             ["Up(Local)"]
         );
+    }
+
+    #[test]
+    fn a_enqueues_the_selection_from_the_focused_pane_without_starting() {
+        let app = connected_app();
+        let mut ui = synced(100, 30, &app);
+        ui.local.selected = ["README.md".to_owned(), "src".to_owned()].into();
+        let out = on_event(&mut ui, &app, ch('a'));
+        assert_eq!(
+            commands(&out),
+            [r#"Enqueue { from: Local, names: ["src", "README.md"] }"#]
+        );
+        assert!(ui.local.selected.is_empty());
+
+        ui.focus = Focus::Remote;
+        ui.remote.cursor = 2; // index.php
+        assert_eq!(
+            commands(&on_event(&mut ui, &app, ch('a'))),
+            [r#"Enqueue { from: Remote, names: ["index.php"] }"#]
+        );
+        ui.remote.cursor = 0; // `..`
+        assert!(on_event(&mut ui, &app, ch('a')).is_empty());
     }
 
     #[test]
@@ -2160,20 +2201,20 @@ mod bottom_tests {
     }
 
     #[test]
-    fn pause_toggles_with_the_queue_state_and_clear_and_retry_map_to_commands() {
+    fn pause_toggles_the_connected_sites_flag_and_clear_and_retry_map_to_commands() {
         let mut app = busy();
         let mut ui = synced(100, 30, &app);
         ui.focus = Focus::Bottom;
         assert_eq!(
             debug(&on_event(&mut ui, &app, ch('p'))),
-            ["QueueSetProcessing(false)"]
+            ["QueueSetSitePaused(true)"]
         );
         let mut paused = (*app.queue).clone();
-        paused.processing = false;
+        paused.paused_sites.insert(crate::test_support::test_site());
         crate::test_support::set_queue(&mut app, paused);
         assert_eq!(
             debug(&on_event(&mut ui, &app, ch('p'))),
-            ["QueueSetProcessing(true)"]
+            ["QueueSetSitePaused(false)"]
         );
         assert_eq!(
             debug(&on_event(&mut ui, &app, ch('C'))),
@@ -2191,6 +2232,38 @@ mod bottom_tests {
         assert_eq!(
             debug(&on_event(&mut ui, &app, ch('r'))),
             ["QueueRetry(TransferId(6))"]
+        );
+    }
+
+    #[test]
+    fn s_starts_and_x_clears_the_queue_tab_only() {
+        let app = busy();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Bottom;
+        assert_eq!(debug(&on_event(&mut ui, &app, ch('S'))), ["QueueStartHeld"]);
+        assert_eq!(debug(&on_event(&mut ui, &app, ch('X'))), ["QueueClear"]);
+        on_event(&mut ui, &app, alt('2'));
+        assert!(on_event(&mut ui, &app, ch('S')).is_empty());
+        assert!(on_event(&mut ui, &app, ch('X')).is_empty());
+        on_event(&mut ui, &app, alt('3'));
+        assert!(on_event(&mut ui, &app, ch('S')).is_empty());
+        assert!(on_event(&mut ui, &app, ch('X')).is_empty());
+    }
+
+    #[test]
+    fn c_clears_what_the_tab_shows() {
+        let app = busy();
+        let mut ui = synced(100, 30, &app);
+        ui.focus = Focus::Bottom;
+        on_event(&mut ui, &app, alt('2'));
+        assert_eq!(
+            debug(&on_event(&mut ui, &app, ch('C'))),
+            ["QueueClearCompleted"]
+        );
+        on_event(&mut ui, &app, alt('3'));
+        assert_eq!(
+            debug(&on_event(&mut ui, &app, ch('C'))),
+            ["QueueClearFailed"]
         );
     }
 

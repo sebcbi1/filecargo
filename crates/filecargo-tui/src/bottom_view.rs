@@ -22,6 +22,9 @@ fn tab_label(tab: BottomTab, app: &AppState) -> (String, Option<usize>) {
         BottomTab::Log | BottomTab::Terminal => None,
     };
     let text = match count {
+        Some(n) if tab == BottomTab::Queue && app.site_paused() => {
+            format!(" {} ({n}, paused) ", tab.name())
+        }
         Some(n) => format!(" {} ({n}) ", tab.name()),
         None => format!(" {} ", tab.name()),
     };
@@ -191,6 +194,12 @@ fn render_queue(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, loo
                 String::new(),
                 String::new(),
             ),
+            ItemState::Held => (
+                "queued (held)".to_owned(),
+                item.size.map(format_size).unwrap_or_default(),
+                String::new(),
+                String::new(),
+            ),
             _ => (
                 "queued".to_owned(),
                 item.size.map(format_size).unwrap_or_default(),
@@ -247,7 +256,7 @@ fn render_queue(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, loo
     if let Some(eta) = totals.eta {
         footer.push_str(&format!(" · ETA {}", format_duration(eta)));
     }
-    let footer_style = if queue.processing {
+    let footer_style = if queue.processing && !app.site_paused() {
         Style::new().add_modifier(Modifier::DIM)
     } else {
         footer.push_str(" · PAUSED (p to resume)");

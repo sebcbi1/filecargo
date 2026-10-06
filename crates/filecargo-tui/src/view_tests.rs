@@ -309,6 +309,11 @@ fn prompts_of_every_kind_are_drawn() {
         active_transfers: 3,
     };
     insta::assert_snapshot!("prompt_quit", prompt_screen(quit));
+    let clear = PromptKind::ConfirmClearQueue {
+        items: 5,
+        active: 2,
+    };
+    insta::assert_snapshot!("prompt_clear_queue", prompt_screen(clear));
     let message = PromptKind::Message {
         level: Level::Warning,
         title: "FileZilla import".into(),
@@ -375,6 +380,36 @@ fn a_paused_queue_says_so_in_the_footer() {
         crate::test_support::set_queue(app, queue);
     });
     assert!(screen.contains("PAUSED"));
+}
+
+#[test]
+fn a_paused_site_says_so_in_the_tab_header_and_the_footer() {
+    use crate::ui_state::BottomTab;
+    let screen = bottom_screen(BottomTab::Queue, false, |app| {
+        let mut queue = (*app.queue).clone();
+        queue.paused_sites.insert(crate::test_support::test_site());
+        crate::test_support::set_queue(app, queue);
+    });
+    assert!(screen.contains("PAUSED"));
+    assert!(screen.contains("Queue (3, paused)"), "{screen}");
+    insta::assert_snapshot!("queue_site_paused", screen);
+}
+
+#[test]
+fn held_items_show_as_queued() {
+    use crate::test_support::{busy_queue, queue_item, set_queue};
+    use crate::ui_state::BottomTab;
+    use filecargo_app_core::prelude::ItemState;
+    let screen = bottom_screen(BottomTab::Queue, true, |app| {
+        let mut queue = busy_queue();
+        queue.pending = vec![
+            queue_item(10, true, "a.txt", Some(10), 0, ItemState::Held),
+            queue_item(11, false, "b.txt", Some(2048), 0, ItemState::Held),
+        ];
+        set_queue(app, queue);
+    });
+    assert!(screen.contains("Queue (2)"), "{screen}");
+    insta::assert_snapshot!("queue_held_rows", screen);
 }
 
 #[test]
