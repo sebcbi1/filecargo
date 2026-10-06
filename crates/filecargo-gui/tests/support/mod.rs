@@ -95,3 +95,13 @@ impl Harness {
         panic!("timed out waiting for {what}");
     }
 }
+
+/// The path as the local pane reports it: canonical (`/private/var/…` on macOS) and without
+/// the `\\?\` prefix Windows adds.
+pub fn canonical(path: &std::path::Path) -> std::path::PathBuf {
+    let path = std::fs::canonicalize(path).unwrap();
+    match path.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        Some(rest) if !rest.starts_with("UNC") => rest.into(),
+        _ => path,
+    }
+}

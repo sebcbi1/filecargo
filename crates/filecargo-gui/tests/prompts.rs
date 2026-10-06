@@ -178,7 +178,7 @@ async fn a_conflict_prompt_compares_both_files_and_the_rule_reaches_the_queue(
     connect(&e, cx).await;
     e.h.wait_state(cx, "the session", connected).await;
     e.h.wait_state(cx, "the local folder", {
-        let local = e.local.path().to_path_buf();
+        let local = support::canonical(e.local.path());
         move |s| s.local.path == local && !s.local.entries.is_empty()
     })
     .await;
@@ -214,7 +214,7 @@ async fn skipping_in_a_conflict_prompt_leaves_the_file(cx: &mut TestAppContext) 
     connect(&e, cx).await;
     e.h.wait_state(cx, "the session", connected).await;
     e.h.wait_state(cx, "the local folder", {
-        let local = e.local.path().to_path_buf();
+        let local = support::canonical(e.local.path());
         move |s| s.local.path == local && !s.local.entries.is_empty()
     })
     .await;
@@ -268,7 +268,7 @@ async fn confirm_quit_waits_for_the_answer_while_a_transfer_runs(cx: &mut TestAp
     connect(&e, cx).await;
     e.h.wait_state(cx, "the session", connected).await;
     e.h.wait_state(cx, "the local folder", {
-        let local = e.local.path().to_path_buf();
+        let local = support::canonical(e.local.path());
         move |s| s.local.path == local && !s.local.entries.is_empty()
     })
     .await;

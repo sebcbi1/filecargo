@@ -35,7 +35,7 @@ async fn env(cx: &mut TestAppContext) -> Env {
     h.wait_state(cx, "the site", |s| s.servers.sites().len() == 1)
         .await;
     h.app.send(Command::Connect(id));
-    let wanted = local.path().to_path_buf();
+    let wanted = support::canonical(local.path());
     h.wait_state(cx, "the session", move |s| {
         s.remote.as_ref().is_some_and(|r| !r.entries.is_empty())
             && s.local.path == wanted
@@ -163,7 +163,7 @@ async fn secondary_l_focuses_the_path_bar_and_enter_navigates(cx: &mut TestAppCo
         window.press("enter", cx);
     })
     .unwrap();
-    let inside = e.local.path().join("sub");
+    let inside = support::canonical(&e.local.path().join("sub"));
     e.h.wait_state(cx, "to enter sub", move |s| s.local.path == inside)
         .await;
 }

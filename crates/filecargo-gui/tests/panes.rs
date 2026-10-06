@@ -25,13 +25,7 @@ async fn show_local(h: &Harness, cx: &mut TestAppContext, dir: &Path) {
         pane: PaneId::Local,
         path: dir.display().to_string(),
     });
-    // the listing reports the canonical path (`/private/var` on macOS, no `\\?\` on Windows)
-    let wanted = std::fs::canonicalize(dir).unwrap();
-    let wanted = match wanted.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
-        Some(rest) => std::path::PathBuf::from(rest),
-        None => wanted,
-    };
-
+    let wanted = support::canonical(dir);
     h.wait_state(cx, "the local listing", move |s| {
         s.local.path == wanted && s.local.entries.len() >= 4
     })

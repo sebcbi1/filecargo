@@ -47,6 +47,9 @@ jobs:
   gui:
     name: gui (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      # a dozen test binaries each link gpui: without debug info the linker stays within the runner's memory and disk
+      CARGO_PROFILE_DEV_DEBUG: 0
     strategy:
       fail-fast: false
       matrix:
