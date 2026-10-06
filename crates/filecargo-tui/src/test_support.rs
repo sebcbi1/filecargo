@@ -153,7 +153,7 @@ pub fn queue_item(
     QueueItemView {
         item: QueueItem {
             id: TransferId(id),
-            site: SiteId::new(),
+            site: test_site(),
             direction: if up {
                 Direction::Upload
             } else {
@@ -292,4 +292,45 @@ impl FakeShell {
         }
         panic!("the screen never took the output");
     }
+}
+
+/// The site of every `queue_item` unless a test says otherwise.
+pub fn test_site() -> SiteId {
+    "00000000-0000-4000-8000-000000000001".parse().unwrap()
+}
+
+/// Another site, for items that must not show in `test_site`'s panel.
+pub fn other_site() -> SiteId {
+    "00000000-0000-4000-8000-000000000002".parse().unwrap()
+}
+
+/// Publishes `queue` the way app-core does while connected to `scope`: the full queue, plus the
+/// view reduced to the scope's items and the count of other sites' active transfers.
+pub fn scope_queue(app: &mut AppState, queue: QueueSnapshot, scope: Option<SiteId>) {
+    let only = |views: &[QueueItemView]| -> Vec<QueueItemView> {
+        views
+            .iter()
+            .filter(|v| Some(v.item.site) == scope)
+            .cloned()
+            .collect()
+    };
+    app.other_sites_active = queue
+        .pending
+        .iter()
+        .filter(|v| matches!(v.item.state, ItemState::Active { .. }) && Some(v.item.site) != scope)
+        .count();
+    app.site_queue = Arc::new(QueueSnapshot {
+        pending: only(&queue.pending),
+        completed: only(&queue.completed),
+        failed: only(&queue.failed),
+        processing: queue.processing,
+        totals: queue.totals.clone(),
+    });
+    app.scope = scope;
+    app.queue = Arc::new(queue);
+}
+
+/// `scope_queue` for the common case: connected to `test_site()`.
+pub fn set_queue(app: &mut AppState, queue: QueueSnapshot) {
+    scope_queue(app, queue, Some(test_site()));
 }

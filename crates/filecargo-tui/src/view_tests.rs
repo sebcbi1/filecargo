@@ -350,7 +350,7 @@ fn bottom_screen(
     tweak: impl FnOnce(&mut filecargo_app_core::prelude::AppState),
 ) -> String {
     let mut app = connected_app();
-    app.queue = std::sync::Arc::new(crate::test_support::busy_queue());
+    crate::test_support::set_queue(&mut app, crate::test_support::busy_queue());
     tweak(&mut app);
     let mut ui = synced(100, 30, &app);
     ui.bottom.tab = tab;
@@ -372,7 +372,7 @@ fn a_paused_queue_says_so_in_the_footer() {
     let screen = bottom_screen(BottomTab::Queue, false, |app| {
         let mut queue = (*app.queue).clone();
         queue.processing = false;
-        app.queue = std::sync::Arc::new(queue);
+        crate::test_support::set_queue(app, queue);
     });
     assert!(screen.contains("PAUSED"));
 }
@@ -391,7 +391,7 @@ fn completed_and_failed_tabs_list_their_items() {
 fn empty_lists_say_what_they_are_for() {
     use crate::ui_state::BottomTab;
     let screen = bottom_screen(BottomTab::Queue, false, |app| {
-        app.queue = std::sync::Arc::new(Default::default());
+        crate::test_support::set_queue(app, Default::default());
     });
     assert!(screen.contains("Nothing queued"));
 }
@@ -401,7 +401,7 @@ fn the_log_tab_shows_the_newest_lines_with_levels() {
     use crate::ui_state::BottomTab;
     use filecargo_app_core::prelude::{LogLevel, LogLine};
     let mut app = connected_app();
-    app.queue = std::sync::Arc::new(Default::default());
+    crate::test_support::set_queue(&mut app, Default::default());
     let mut ui = synced(100, 30, &app);
     ui.bottom.tab = BottomTab::Log;
     for (n, level) in [LogLevel::Info, LogLevel::Warn, LogLevel::Error]
@@ -509,7 +509,7 @@ fn no_color_means_no_color_anywhere_even_in_dialogs_and_prompts() {
     use filecargo_app_core::prelude::*;
     use ratatui::style::Color;
     let mut app = connected_app();
-    app.queue = std::sync::Arc::new(crate::test_support::busy_queue());
+    crate::test_support::set_queue(&mut app, crate::test_support::busy_queue());
     app.notices = vec![Notice {
         id: NoticeId(1),
         level: Level::Warning,
@@ -558,7 +558,7 @@ async fn the_main_screens_fit_in_80_by_24() {
     let small = |app: &AppState| synced(80, 24, app);
 
     let mut app = connected_app();
-    app.queue = std::sync::Arc::new(crate::test_support::busy_queue());
+    crate::test_support::set_queue(&mut app, crate::test_support::busy_queue());
     let mut ui = small(&app);
     ui.focus = Focus::Bottom;
     insta::assert_snapshot!("small_transfer", draw(&ui, &app));
@@ -602,4 +602,112 @@ async fn the_main_screens_fit_in_80_by_24() {
     ui.bottom.tab = BottomTab::Terminal;
     ui.focus = Focus::Bottom;
     insta::assert_snapshot!("small_terminal", draw(&ui, &with_shell));
+}
+
+fn with_other_site_item(app: &mut filecargo_app_core::prelude::AppState) {
+    use crate::test_support::{busy_queue, other_site, queue_item, scope_queue, test_site};
+    use filecargo_app_core::prelude::ItemState;
+    let mut queue = busy_queue();
+    let mut theirs = queue_item(
+        90,
+        true,
+        "secret.bin",
+        Some(1000),
+        500,
+        ItemState::Active {
+            started: std::time::UNIX_EPOCH,
+        },
+    );
+    theirs.item.site = other_site();
+    queue.pending.push(theirs);
+    scope_queue(app, queue, Some(test_site()));
+}
+
+#[test]
+fn the_queue_lists_only_the_connected_sites_items_with_both_paths() {
+    use crate::ui_state::BottomTab;
+    let screen = bottom_screen(BottomTab::Queue, true, with_other_site_item);
+    assert!(!screen.contains("secret.bin"), "{screen}");
+    assert!(
+        screen.contains("Queue (3)"),
+        "the tab count is scoped\n{screen}"
+    );
+    insta::assert_snapshot!("queue_scoped_with_paths", screen);
+}
+
+#[test]
+fn completed_and_failed_rows_show_both_paths() {
+    use crate::ui_state::BottomTab;
+    for (name, tab) in [
+        ("completed_paths", BottomTab::Completed),
+        ("failed_paths", BottomTab::Failed),
+    ] {
+        let screen = bottom_screen(tab, true, with_other_site_item);
+        assert!(screen.contains("me/projects/"), "{screen}");
+        assert!(screen.contains("/var/www"), "{screen}");
+        insta::assert_snapshot!(name, screen);
+    }
+}
+
+#[test]
+fn disconnected_the_lists_are_empty_and_the_hint_counts_the_running_transfers() {
+    use crate::ui_state::BottomTab;
+    let tweak = |app: &mut filecargo_app_core::prelude::AppState| {
+        let queue = (*app.queue).clone();
+        crate::test_support::scope_queue(app, queue, None);
+    };
+    for tab in [BottomTab::Queue, BottomTab::Completed, BottomTab::Failed] {
+        let screen = bottom_screen(tab, false, tweak);
+        assert!(!screen.contains("backup.tar"), "{screen}");
+        assert!(screen.contains("1 transfer on other sites"), "{screen}");
+    }
+    insta::assert_snapshot!(
+        "queue_disconnected",
+        bottom_screen(BottomTab::Queue, true, tweak)
+    );
+}
+
+#[test]
+fn no_hint_while_no_other_site_is_transferring() {
+    use crate::ui_state::BottomTab;
+    let screen = bottom_screen(BottomTab::Queue, false, |_| {});
+    assert!(!screen.contains("on other sites"), "{screen}");
+    let screen = bottom_screen(BottomTab::Queue, false, with_other_site_item);
+    assert!(screen.contains("1 transfer on other sites"), "{screen}");
+}
+
+#[test]
+fn the_log_shows_the_scope_and_app_wide_lines_only() {
+    use crate::test_support::{other_site, test_site};
+    use crate::ui_state::BottomTab;
+    use filecargo_app_core::prelude::{LogLevel, LogLine};
+    let mut app = connected_app();
+    crate::test_support::set_queue(&mut app, Default::default());
+    let mut ui = synced(100, 30, &app);
+    ui.bottom.tab = BottomTab::Log;
+    for (message, site) in [
+        ("app wide", None),
+        ("mine", Some(test_site())),
+        ("theirs", Some(other_site())),
+    ] {
+        ui.log.push(LogLine {
+            time: std::time::UNIX_EPOCH,
+            level: LogLevel::Info,
+            target: "t".into(),
+            message: message.into(),
+            site,
+        });
+    }
+    let screen = draw(&ui, &app);
+    assert!(
+        screen.contains("app wide") && screen.contains("mine"),
+        "{screen}"
+    );
+    assert!(!screen.contains("theirs"), "{screen}");
+    crate::test_support::scope_queue(&mut app, Default::default(), None);
+    let screen = draw(&ui, &app);
+    assert!(
+        screen.contains("app wide") && !screen.contains("mine"),
+        "{screen}"
+    );
 }

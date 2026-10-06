@@ -16,9 +16,9 @@ const BAR: usize = 10;
 /// The label of a tab with its count, e.g. ` Queue (3) `.
 fn tab_label(tab: BottomTab, app: &AppState) -> (String, Option<usize>) {
     let count = match tab {
-        BottomTab::Queue => Some(app.queue.pending.len()),
-        BottomTab::Completed => Some(app.queue.completed.len()),
-        BottomTab::Failed => Some(app.queue.failed.len()),
+        BottomTab::Queue => Some(app.site_queue.pending.len()),
+        BottomTab::Completed => Some(app.site_queue.completed.len()),
+        BottomTab::Failed => Some(app.site_queue.failed.len()),
         BottomTab::Log | BottomTab::Terminal => None,
     };
     let text = match count {
@@ -76,25 +76,37 @@ pub(crate) fn render(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState
         BottomTab::Queue => render_queue(frame, inner, ui, app, look),
         BottomTab::Completed => render_completed(frame, inner, ui, app, look),
         BottomTab::Failed => render_failed(frame, inner, ui, app, look),
-        BottomTab::Log => render_log(frame, inner, ui, look),
+        BottomTab::Log => render_log(frame, inner, ui, app, look),
         BottomTab::Terminal => render_terminal(frame, inner, app, look),
     }
 }
 
-fn name_of(item: &QueueItem) -> String {
-    let name = match item.direction {
-        Direction::Upload => item
-            .local
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned()),
-        Direction::Download => item.remote.file_name().map(str::to_owned),
+/// `text` cut to `width` characters from the left: `…html/index.php`.
+pub(crate) fn truncate_left(text: &str, width: usize) -> String {
+    let count = text.chars().count();
+    if count <= width {
+        return text.to_owned();
     }
-    .unwrap_or_else(|| item.remote.to_string());
-    if item.is_dir {
-        format!("{name}/")
-    } else {
-        name
+    if width == 0 {
+        return String::new();
     }
+    let tail: String = text.chars().skip(count - (width - 1)).collect();
+    format!("…{tail}")
+}
+
+/// The width of each of the two path columns: what is left of `area` after `fixed` cells of other
+/// columns and the gaps between `columns` columns, `share` percent of it going to the paths.
+fn path_width(area: Rect, fixed: u16, columns: u16, share: u16) -> usize {
+    let left = area.width.saturating_sub(fixed + columns.saturating_sub(1));
+    usize::from(left * share / 200).max(4)
+}
+
+fn local_cell(item: &QueueItem, width: usize) -> String {
+    truncate_left(&item.local.display().to_string(), width)
+}
+
+fn remote_cell(item: &QueueItem, width: usize) -> String {
+    truncate_left(item.remote.as_str(), width)
 }
 
 fn arrow(direction: Direction) -> &'static str {
@@ -141,7 +153,7 @@ fn empty(frame: &mut Frame, area: Rect, text: &str) {
 }
 
 fn render_queue(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, look: &Look) {
-    let queue = &app.queue;
+    let queue = &app.site_queue;
     if queue.pending.is_empty() {
         empty(
             frame,
@@ -152,7 +164,8 @@ fn render_queue(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, loo
     }
     let focused = ui.focus == Focus::Bottom;
     let rows_visible = usize::from(area.height.saturating_sub(2));
-    let header = Row::new(["", "Name", "Progress", "Done", "Speed", "ETA"])
+    let paths = path_width(area, 1 + (BAR as u16 + 5) + 17 + 9 + 7, 7, 100);
+    let header = Row::new(["", "Local", "Remote", "Progress", "Done", "Speed", "ETA"])
         .style(Style::new().add_modifier(Modifier::BOLD));
     let mut rows = Vec::new();
     for (index, view) in visible(&queue.pending, ui.bottom.queue, rows_visible) {
@@ -192,7 +205,8 @@ fn render_queue(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, loo
         rows.push(
             Row::new([
                 Cell::from(arrow(item.direction)),
-                Cell::from(name_of(item)),
+                Cell::from(local_cell(item, paths)),
+                Cell::from(remote_cell(item, paths)),
                 Cell::from(progress),
                 Cell::from(Line::from(done).alignment(Alignment::Right)),
                 Cell::from(Line::from(speed).alignment(Alignment::Right)),
@@ -210,7 +224,8 @@ fn render_queue(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, loo
             rows,
             [
                 Constraint::Length(1),
-                Constraint::Min(10),
+                Constraint::Length(paths as u16),
+                Constraint::Length(paths as u16),
                 Constraint::Length((BAR + 5) as u16),
                 Constraint::Length(17),
                 Constraint::Length(9),
@@ -257,13 +272,14 @@ fn outcome_text(outcome: &Outcome) -> String {
 }
 
 fn render_completed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, look: &Look) {
-    let list = &app.queue.completed;
+    let list = &app.site_queue.completed;
     if list.is_empty() {
         empty(frame, area, "Nothing completed yet.");
         return;
     }
     let focused = ui.focus == Focus::Bottom;
     let rows_visible = usize::from(area.height.saturating_sub(2));
+    let paths = path_width(area, 1 + 24 + 8 + 11, 6, 100);
     let mut rows = Vec::new();
     for (index, view) in visible(list, ui.bottom.completed, rows_visible) {
         let item = &view.item;
@@ -276,7 +292,8 @@ fn render_completed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState,
         rows.push(
             Row::new([
                 Cell::from(arrow(item.direction)),
-                Cell::from(name_of(item)),
+                Cell::from(local_cell(item, paths)),
+                Cell::from(remote_cell(item, paths)),
                 Cell::from(result),
                 Cell::from(
                     Line::from(item.size.map(format_size).unwrap_or_default())
@@ -290,14 +307,15 @@ fn render_completed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState,
             ),
         );
     }
-    let header = Row::new(["", "Name", "Result", "Size", "Finished"])
+    let header = Row::new(["", "Local", "Remote", "Result", "Size", "Finished"])
         .style(Style::new().add_modifier(Modifier::BOLD));
     frame.render_widget(
         Table::new(
             rows,
             [
                 Constraint::Length(1),
-                Constraint::Min(10),
+                Constraint::Length(paths as u16),
+                Constraint::Length(paths as u16),
                 Constraint::Length(24),
                 Constraint::Length(8),
                 Constraint::Length(11),
@@ -321,13 +339,14 @@ fn render_completed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState,
 }
 
 fn render_failed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, look: &Look) {
-    let list = &app.queue.failed;
+    let list = &app.site_queue.failed;
     if list.is_empty() {
         empty(frame, area, "No failed transfers.");
         return;
     }
     let focused = ui.focus == Focus::Bottom;
     let rows_visible = usize::from(area.height.saturating_sub(2));
+    let paths = path_width(area, 1 + 6, 5, 55);
     let mut rows = Vec::new();
     for (index, view) in visible(list, ui.bottom.failed, rows_visible) {
         let item = &view.item;
@@ -340,7 +359,8 @@ fn render_failed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, lo
         rows.push(
             Row::new([
                 Cell::from("✗"),
-                Cell::from(name_of(item)),
+                Cell::from(local_cell(item, paths)),
+                Cell::from(remote_cell(item, paths)),
                 Cell::from(reason),
                 Cell::from(if retryable { "retry" } else { "final" }),
             ])
@@ -349,14 +369,15 @@ fn render_failed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, lo
             ),
         );
     }
-    let header =
-        Row::new(["", "Name", "Reason", ""]).style(Style::new().add_modifier(Modifier::BOLD));
+    let header = Row::new(["", "Local", "Remote", "Reason", ""])
+        .style(Style::new().add_modifier(Modifier::BOLD));
     frame.render_widget(
         Table::new(
             rows,
             [
                 Constraint::Length(1),
-                Constraint::Length(24),
+                Constraint::Length(paths as u16),
+                Constraint::Length(paths as u16),
                 Constraint::Min(10),
                 Constraint::Length(6),
             ],
@@ -378,12 +399,13 @@ fn render_failed(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, lo
     );
 }
 
-fn render_log(frame: &mut Frame, area: Rect, ui: &UiState, look: &Look) {
+fn render_log(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, look: &Look) {
     let rows = usize::from(area.height);
-    let lines: Vec<Line> = ui.log.with_lines(|lines| {
-        let end = lines.len().saturating_sub(ui.bottom.log_scroll);
+    let shown = ui.log.lines_for(app.scope);
+    let lines: Vec<Line> = {
+        let end = shown.len().saturating_sub(ui.bottom.log_scroll);
         let start = end.saturating_sub(rows);
-        lines
+        shown
             .iter()
             .skip(start)
             .take(end - start)
@@ -406,7 +428,7 @@ fn render_log(frame: &mut Frame, area: Rect, ui: &UiState, look: &Look) {
                 ])
             })
             .collect()
-    });
+    };
     if lines.is_empty() {
         empty(frame, area, "The log is empty.");
     } else {
@@ -476,5 +498,27 @@ fn render_terminal(frame: &mut Frame, area: Rect, app: &AppState, look: &Look) {
                 "The terminal needs an SFTP connection (FTP has no shell).",
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_left;
+
+    #[test]
+    fn short_paths_are_kept_and_long_ones_lose_their_left_side() {
+        assert_eq!(truncate_left("/www/index.php", 20), "/www/index.php");
+        assert_eq!(truncate_left("/www/index.php", 14), "/www/index.php");
+        assert_eq!(
+            truncate_left("/var/www/html/index.php", 15),
+            "…html/index.php"
+        );
+        assert_eq!(truncate_left("abcdef", 1), "…");
+        assert_eq!(truncate_left("abcdef", 0), "");
+    }
+
+    #[test]
+    fn the_width_counts_characters_not_bytes() {
+        assert_eq!(truncate_left("é/é/éééé", 5), "…éééé");
     }
 }

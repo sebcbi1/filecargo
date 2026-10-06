@@ -1,6 +1,6 @@
 ---
 source: crates/filecargo-tui/src/view_tests.rs
-expression: "bottom_screen(BottomTab::Completed, true, |_| {})"
+expression: screen
 ---
 "┌ Servers ─────────┐┌ Local ~/projects ────────────────────┐┌ Remote (not connected) ──────────────┐"
 "│No servers yet. Pr││  Name              Size   Modified   ││  Name              Size   Modified   │"
@@ -31,4 +31,4 @@ expression: "bottom_screen(BottomTab::Completed, true, |_| {})"
 "│                                                                                                  │"
 "│C clear the list                                                                                  │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" p pause · Del remove · r retry · C clear · F1 help · q quit                                        "
+" p pause · Del remove · r retry · C clear · F1 help · q quit              1 transfer on other sites "

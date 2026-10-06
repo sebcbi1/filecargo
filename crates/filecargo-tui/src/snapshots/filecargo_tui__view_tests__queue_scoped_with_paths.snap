@@ -1,6 +1,6 @@
 ---
 source: crates/filecargo-tui/src/view_tests.rs
-expression: "bottom_screen(BottomTab::Completed, true, |_| {})"
+expression: screen
 ---
 "┌ Servers ─────────┐┌ Local ~/projects ────────────────────┐┌ Remote (not connected) ──────────────┐"
 "│No servers yet. Pr││  Name              Size   Modified   ││  Name              Size   Modified   │"
@@ -24,11 +24,11 @@ expression: "bottom_screen(BottomTab::Completed, true, |_| {})"
 "│                  ││                                      ││                                      │"
 "└──────────────────┘└──────────────────────────────────────┘└──────────────────────────────────────┘"
 "┌ Queue (3) │ Completed (2) │ Failed (1) │ Log │ Terminal ─────────────────────────────────────────┐"
-"│  Local                    Remote                   Result                   Size     Finished    │"
-"│↓ …e/me/projects/style.css /var/www/style.css       done                         2.0K 09-30 11:55 │"
-"│↓ …e/me/projects/notes.txt /var/www/notes.txt       skipped                      2.0K 09-30 11:55 │"
+"│  Local                 Remote                Progress        Done              Speed     ETA     │"
+"│↑ …/projects/backup.tar /var/www/backup.tar   ████░░░░░░  44%       10.5M/23.8M    1.2M/s    0:12 │"
+"│↑ …e/projects/index.php /var/www/index.php    waiting for you                                     │"
+"│↓ …e/me/projects/photos /var/www/photos       queued                                              │"
 "│                                                                                                  │"
-"│                                                                                                  │"
-"│C clear the list                                                                                  │"
+"│Total 10.5M/24.8M · 1.2M/s · ETA 0:12                                                             │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" p pause · Del remove · r retry · C clear · F1 help · q quit                                        "
+" p pause · Del remove · r retry · C clear · F1 help · q quit              1 transfer on other sites "

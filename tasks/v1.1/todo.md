@@ -132,11 +132,11 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - The status bar shows "N transfers on other sites" when N > 0.
 - The tab counts are scoped.
 **Acceptance:**
-- [ ] insta snapshots: a scoped queue with both paths, empty lists when disconnected, the hint.
-- [ ] Left truncation is unit-tested.
+- [x] insta snapshots: a scoped queue with both paths, empty lists when disconnected, the hint.
+- [x] Left truncation is unit-tested.
 **Verify:**
-- [ ] `cargo test -p filecargo-tui`
-- [ ] `cargo insta review` (no pending snapshots).
+- [x] `cargo test -p filecargo-tui`
+- [x] `cargo insta review` (no pending snapshots).
 **Dependencies:** T6
 **Files:** `crates/filecargo-tui/src/{bottom_view,view,reducer}.rs`, `crates/filecargo-tui/src/test_support.rs`, snapshots
 **Scope:** M

@@ -1,6 +1,6 @@
 ---
 source: crates/filecargo-tui/src/view_tests.rs
-expression: "bottom_screen(BottomTab::Completed, true, |_| {})"
+expression: screen
 ---
 "┌ Servers ─────────┐┌ Local ~/projects ────────────────────┐┌ Remote (not connected) ──────────────┐"
 "│No servers yet. Pr││  Name              Size   Modified   ││  Name              Size   Modified   │"
@@ -24,11 +24,11 @@ expression: "bottom_screen(BottomTab::Completed, true, |_| {})"
 "│                  ││                                      ││                                      │"
 "└──────────────────┘└──────────────────────────────────────┘└──────────────────────────────────────┘"
 "┌ Queue (3) │ Completed (2) │ Failed (1) │ Log │ Terminal ─────────────────────────────────────────┐"
-"│  Local                    Remote                   Result                   Size     Finished    │"
-"│↓ …e/me/projects/style.css /var/www/style.css       done                         2.0K 09-30 11:55 │"
-"│↓ …e/me/projects/notes.txt /var/www/notes.txt       skipped                      2.0K 09-30 11:55 │"
+"│  Local                   Remote                  Reason                                          │"
+"│✗ …me/me/projects/big.iso /var/www/big.iso        connection reset by peer                  retry │"
 "│                                                                                                  │"
 "│                                                                                                  │"
-"│C clear the list                                                                                  │"
+"│                                                                                                  │"
+"│r retry · R retry all · Del remove                                                                │"
 "└──────────────────────────────────────────────────────────────────────────────────────────────────┘"
-" p pause · Del remove · r retry · C clear · F1 help · q quit                                        "
+" p pause · Del remove · r retry · C clear · F1 help · q quit              1 transfer on other sites "

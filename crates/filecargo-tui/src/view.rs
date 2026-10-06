@@ -339,10 +339,41 @@ fn render_status(frame: &mut Frame, area: Rect, ui: &UiState, app: &AppState, lo
                 look.tint(color).add_modifier(Modifier::BOLD),
             )
         }
-        None => Line::styled(
-            crate::help::status_hints(ui),
-            Style::new().add_modifier(Modifier::DIM),
-        ),
+        None => {
+            let hint = other_sites_hint(app.other_sites_active);
+            let width = u16::try_from(hint.chars().count()).unwrap_or(0);
+            if width > 0 && area.width > 2 * width {
+                let right = Rect {
+                    x: area.x + area.width - width - 1,
+                    width: width + 1,
+                    ..area
+                };
+                let dim = Style::new().add_modifier(Modifier::DIM);
+                frame.render_widget(Paragraph::new(Span::styled(hint, dim)), right);
+                let left = Rect {
+                    width: area.width - width - 1,
+                    ..area
+                };
+                frame.render_widget(
+                    Paragraph::new(Line::styled(crate::help::status_hints(ui), dim)),
+                    left,
+                );
+                return;
+            }
+            Line::styled(
+                crate::help::status_hints(ui),
+                Style::new().add_modifier(Modifier::DIM),
+            )
+        }
     };
     frame.render_widget(Paragraph::new(line), area);
+}
+
+/// What the status line says while other sites keep transferring in the background.
+fn other_sites_hint(active: usize) -> String {
+    match active {
+        0 => String::new(),
+        1 => "1 transfer on other sites".to_owned(),
+        n => format!("{n} transfers on other sites"),
+    }
 }

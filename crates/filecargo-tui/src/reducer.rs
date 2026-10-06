@@ -628,9 +628,9 @@ pub(crate) fn log_rows(ui: &UiState) -> usize {
 
 fn list_len(app: &AppState, tab: BottomTab) -> usize {
     match tab {
-        BottomTab::Queue => app.queue.pending.len(),
-        BottomTab::Completed => app.queue.completed.len(),
-        BottomTab::Failed => app.queue.failed.len(),
+        BottomTab::Queue => app.site_queue.pending.len(),
+        BottomTab::Completed => app.site_queue.completed.len(),
+        BottomTab::Failed => app.site_queue.failed.len(),
         BottomTab::Log | BottomTab::Terminal => 0,
     }
 }
@@ -669,9 +669,9 @@ fn select_tab(ui: &mut UiState, tab: BottomTab) {
 /// The id of the item under the cursor of the visible list tab.
 fn item_under_cursor(ui: &UiState, app: &AppState) -> Option<TransferId> {
     let (list, items) = match ui.bottom.tab {
-        BottomTab::Queue => (ui.bottom.queue, &app.queue.pending),
-        BottomTab::Completed => (ui.bottom.completed, &app.queue.completed),
-        BottomTab::Failed => (ui.bottom.failed, &app.queue.failed),
+        BottomTab::Queue => (ui.bottom.queue, &app.site_queue.pending),
+        BottomTab::Completed => (ui.bottom.completed, &app.site_queue.completed),
+        BottomTab::Failed => (ui.bottom.failed, &app.site_queue.failed),
         BottomTab::Log | BottomTab::Terminal => return None,
     };
     items.get(list.cursor).map(|view| view.item.id)
@@ -714,7 +714,7 @@ fn bottom_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Comman
         | Action::Home
         | Action::End => {
             if tab == BottomTab::Log {
-                scroll_log(ui, action);
+                scroll_log(ui, app, action);
             } else {
                 let (len, rows) = (list_len(app, tab), bottom_rows(ui));
                 if let Some(list) = ui.bottom.list_mut() {
@@ -735,8 +735,13 @@ fn bottom_action(ui: &mut UiState, app: &AppState, action: Action) -> Vec<Comman
     }
 }
 
-fn scroll_log(ui: &mut UiState, action: Action) {
-    let total = ui.log.len();
+fn scroll_log(ui: &mut UiState, app: &AppState, action: Action) {
+    let total = ui.log.with_lines(|lines| {
+        lines
+            .iter()
+            .filter(|line| line.site.is_none() || line.site == app.scope)
+            .count()
+    });
     let rows = log_rows(ui);
     let max = total.saturating_sub(rows);
     let page = rows.saturating_sub(1).max(1);
@@ -960,7 +965,7 @@ fn wheel(ui: &mut UiState, app: &AppState, focus: Focus, up: bool) -> Vec<Comman
         Focus::Bottom => match ui.bottom.tab {
             BottomTab::Log => {
                 for _ in 0..WHEEL_STEP {
-                    scroll_log(ui, if up { Action::Up } else { Action::Down });
+                    scroll_log(ui, app, if up { Action::Up } else { Action::Down });
                 }
             }
             BottomTab::Terminal => {
@@ -2100,7 +2105,7 @@ mod bottom_tests {
 
     fn busy() -> AppState {
         let mut app = app();
-        app.queue = std::sync::Arc::new(busy_queue());
+        crate::test_support::set_queue(&mut app, busy_queue());
         app
     }
 
@@ -2165,7 +2170,7 @@ mod bottom_tests {
         );
         let mut paused = (*app.queue).clone();
         paused.processing = false;
-        app.queue = std::sync::Arc::new(paused);
+        crate::test_support::set_queue(&mut app, paused);
         assert_eq!(
             debug(&on_event(&mut ui, &app, ch('p'))),
             ["QueueSetProcessing(true)"]
@@ -2209,7 +2214,7 @@ mod bottom_tests {
         assert_eq!(ui.bottom.queue.cursor, 2);
         let mut smaller = (*app.queue).clone();
         smaller.pending.truncate(1);
-        app.queue = std::sync::Arc::new(smaller);
+        crate::test_support::set_queue(&mut app, smaller);
         sync(&mut ui, &app);
         assert_eq!(ui.bottom.queue.cursor, 0);
     }
@@ -2625,7 +2630,7 @@ mod polish_tests {
     fn clicks_in_the_tree_and_the_bottom_panel_pick_rows_and_tabs() {
         let mut app = app();
         app.servers = std::sync::Arc::new(sample_tree());
-        app.queue = std::sync::Arc::new(busy_queue());
+        crate::test_support::set_queue(&mut app, busy_queue());
         let mut ui = synced(100, 30, &app);
         ui.tree.expanded = app.servers.folders().iter().map(|f| f.id).collect();
         on_event(&mut ui, &app, click(5, 4)); // tree: rows start at y=1
