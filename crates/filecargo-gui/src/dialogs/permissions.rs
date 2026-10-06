@@ -35,6 +35,7 @@ pub fn parse_octal(text: &str) -> Option<u32> {
 
 pub struct PermissionsView {
     model: Entity<AppModel>,
+    pane: PaneId,
     names: Vec<String>,
     pub octal: Entity<InputState>,
     /// The mode the boxes show (permission bits plus any special bits typed in octal).
@@ -46,6 +47,7 @@ pub struct PermissionsView {
 impl PermissionsView {
     fn new(
         model: Entity<AppModel>,
+        pane: PaneId,
         names: Vec<String>,
         mode: u32,
         window: &mut Window,
@@ -69,6 +71,7 @@ impl PermissionsView {
         });
         Self {
             model,
+            pane,
             names,
             octal,
             mode: mode & 0o7777,
@@ -95,7 +98,7 @@ impl PermissionsView {
         match parse_octal(&self.octal.read(cx).value()) {
             Some(mode) => {
                 self.model.read(cx).send(Command::Chmod {
-                    pane: PaneId::Remote,
+                    pane: self.pane,
                     names: self.names.clone(),
                     mode,
                 });
@@ -152,6 +155,7 @@ impl Render for PermissionsView {
 
 pub fn open(
     model: Entity<AppModel>,
+    pane: PaneId,
     names: Vec<String>,
     mode: u32,
     window: &mut Window,
@@ -161,7 +165,7 @@ pub fn open(
         [one] => format!("Permissions of {one}"),
         many => format!("Permissions of {} items", many.len()),
     };
-    let view = cx.new(|cx| PermissionsView::new(model, names, mode, window, cx));
+    let view = cx.new(|cx| PermissionsView::new(model, pane, names, mode, window, cx));
     open_form(
         window,
         cx,

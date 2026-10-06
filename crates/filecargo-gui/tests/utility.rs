@@ -58,7 +58,14 @@ async fn the_permissions_dialog_keeps_octal_and_boxes_in_step_and_applies_chmod(
     let model = h.model.clone();
     let view = cx
         .update_window(h.window.into(), |_, window, cx| {
-            permissions::open(model, vec!["a.txt".into()], 0o640, window, cx)
+            permissions::open(
+                model,
+                PaneId::Remote,
+                vec!["a.txt".into()],
+                0o640,
+                window,
+                cx,
+            )
         })
         .unwrap();
     dialog_open(&h, cx).await;

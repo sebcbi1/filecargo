@@ -70,19 +70,19 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
   Unix only).
 - The toolbar's Folder, Rename and Delete buttons act on the last-focused pane.
 **Acceptance:**
-- [ ] A headless test of each local menu entry sends the matching `pane: Local` command, and the
+- [x] A headless test of each local menu entry sends the matching `pane: Local` command, and the
   disk changes.
-- [ ] Toolbar Delete with the local pane focused deletes local files after a confirm.
-- [ ] Remote behaviour is unchanged.
+- [x] Toolbar Delete with the local pane focused deletes local files after a confirm.
+- [x] Remote behaviour is unchanged.
 **Verify:**
-- [ ] `nix-shell --run "cargo test -p filecargo-gui"`
+- [x] `nix-shell --run "cargo test -p filecargo-gui"`
 **Dependencies:** T2
 **Files:** `crates/filecargo-gui/src/{pane,toolbar,workspace}.rs`, `crates/filecargo-gui/tests/local_ops.rs` (new, using `support::canonical`)
 **Scope:** M
 
 ### Checkpoint A
-- [ ] Full suite green (default, GUI, clippy, fmt).
-- [ ] Manual: local mkdir/rename/delete/chmod in both UIs.
+- [x] Full suite green (default, GUI, clippy, fmt).
+- [ ] (pending, manual) local mkdir/rename/delete/chmod in both UIs.
 - [ ] Human review: pending (auto mode continues).
 
 ---

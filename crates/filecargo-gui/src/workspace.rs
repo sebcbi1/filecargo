@@ -39,6 +39,8 @@ pub struct Workspace {
     pub local: Entity<FilePaneView>,
     pub remote: Entity<FilePaneView>,
     pub bottom: Entity<BottomPanel>,
+    /// The pane the toolbar's file buttons act on: the one last clicked or focused.
+    pub focused_pane: PaneId,
     _prompts: Entity<PromptHost>,
     _notices: Entity<NoticeHost>,
     /// How many times the view drew (tests use it to see that a snapshot re-rendered).
@@ -65,11 +67,19 @@ impl Workspace {
             local,
             remote,
             bottom,
+            focused_pane: PaneId::Local,
             _prompts,
             _notices,
             renders: 0,
             _observe,
             _observe_tree,
+        }
+    }
+
+    fn focused_view(&self) -> Entity<FilePaneView> {
+        match self.focused_pane {
+            PaneId::Local => self.local.clone(),
+            PaneId::Remote => self.remote.clone(),
         }
     }
 
@@ -85,11 +95,14 @@ impl Workspace {
         let state = self.model.read(cx).state.clone();
         let connected = matches!(state.session, SessionState::Connected { .. });
         let busy = matches!(state.session, SessionState::Connecting { .. });
+        // the remote pane only has something to act on while connected
+        let files_ready = self.focused_pane == PaneId::Local || connected;
         let can_connect = self.selected_site(cx).is_some() && !busy;
         h_flex()
             .px_2()
             .py_1()
             .gap_1()
+            .flex_wrap()
             .items_center()
             .border_b_1()
             .border_color(cx.theme().border)
@@ -199,6 +212,38 @@ impl Workspace {
                     })),
             )
             .child(
+                Button::new("new-pane-folder")
+                    .small()
+                    .icon(IconName::FolderClosed)
+                    .label("Folder")
+                    .disabled(!files_ready)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.focused_view()
+                            .update(cx, |pane, cx| pane.new_folder(window, cx));
+                    })),
+            )
+            .child(
+                Button::new("rename")
+                    .small()
+                    .label("Rename")
+                    .disabled(!files_ready)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.focused_view()
+                            .update(cx, |pane, cx| pane.rename_entry(window, cx));
+                    })),
+            )
+            .child(
+                Button::new("delete")
+                    .small()
+                    .icon(IconName::Delete)
+                    .label("Delete")
+                    .disabled(!files_ready)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.focused_view()
+                            .update(cx, |pane, cx| pane.delete_entries(cx));
+                    })),
+            )
+            .child(
                 Button::new("pause")
                     .small()
                     .icon(if state.queue.processing {
@@ -237,8 +282,19 @@ impl Render for Workspace {
             .border_1()
             .border_color(cx.theme().border)
             .child(self.tree.clone());
-        let local = self.local.clone();
-        let remote = self.remote.clone();
+        let pane_box = |view: Entity<FilePaneView>, pane: PaneId, cx: &mut Context<Self>| {
+            div()
+                .size_full()
+                .capture_any_mouse_down(cx.listener(move |this, _, _, cx| {
+                    if this.focused_pane != pane {
+                        this.focused_pane = pane;
+                        cx.notify();
+                    }
+                }))
+                .child(view)
+        };
+        let local = pane_box(self.local.clone(), PaneId::Local, cx);
+        let remote = pane_box(self.remote.clone(), PaneId::Remote, cx);
         let bottom = v_flex()
             .size_full()
             .border_1()
@@ -294,7 +350,7 @@ impl Render for Workspace {
 pub fn bind_keys(cx: &mut gpui_kit::App) {
     use crate::bottom::RemoveItem;
     use crate::pane::{
-        DeleteEntries, FocusPath, NewRemoteFolder, OpenRow, ParentDir, RefreshPane, RenameEntry,
+        DeleteEntries, FocusPath, NewFolder, OpenRow, ParentDir, RefreshPane, RenameEntry,
         SelectAllRows, TransferSelection,
     };
     use crate::terminal::{SendBackTab, SendTab};
@@ -308,7 +364,7 @@ pub fn bind_keys(cx: &mut gpui_kit::App) {
         KeyBinding::new("secondary-a", SelectAllRows, Some("FilePane")),
         KeyBinding::new("secondary-r", RefreshPane, Some("FilePane")),
         KeyBinding::new("f5", TransferSelection, Some("FilePane")),
-        KeyBinding::new("f7", NewRemoteFolder, Some("FilePane")),
+        KeyBinding::new("f7", NewFolder, Some("FilePane")),
         KeyBinding::new("f2", RenameEntry, Some("FilePane")),
         KeyBinding::new("delete", DeleteEntries, Some("FilePane")),
         KeyBinding::new("secondary-l", FocusPath, Some("FilePane")),

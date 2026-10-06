@@ -29,7 +29,7 @@ gpui_kit::actions!(
         SelectAllRows,
         RefreshPane,
         TransferSelection,
-        NewRemoteFolder,
+        NewFolder,
         RenameEntry,
         DeleteEntries,
         FocusPath
@@ -309,36 +309,59 @@ impl TableDelegate for PaneDelegate {
         _: &mut Window,
         _: &mut Context<TableState<Self>>,
     ) -> PopupMenu {
-        let remote = self.pane == PaneId::Remote;
-        let item =
-            |label: &'static str,
-             run: fn(&mut FilePaneView, &mut Window, &mut Context<FilePaneView>)| {
-                let view = self.view.clone();
-                PopupMenuItem::new(label).on_click(move |_, window, cx| {
-                    view.update(cx, |pane, cx| run(pane, window, cx)).ok();
-                })
+        let mut menu = menu;
+        for entry in menu_items(self.pane) {
+            menu = match entry {
+                None => menu.separator(),
+                Some((label, run)) => {
+                    let view = self.view.clone();
+                    menu.item(PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                        view.update(cx, |pane, cx| run(pane, window, cx)).ok();
+                    }))
+                }
             };
-        let mut menu = menu.item(item(
-            if remote { "Download" } else { "Upload" },
-            |pane, _, cx| pane.transfer_selection(cx),
-        ));
-        if remote {
-            menu = menu
-                .separator()
-                .item(item("New folder…", |pane, window, cx| {
-                    pane.new_folder(window, cx)
-                }))
-                .item(item("Rename…", |pane, window, cx| {
-                    pane.rename_entry(window, cx)
-                }))
-                .item(item("Delete", |pane, _, cx| pane.delete_entries(cx)))
-                .item(item("Permissions…", |pane, window, cx| {
-                    pane.open_permissions(window, cx)
-                }));
         }
-        menu.separator()
-            .item(item("Refresh", |pane, _, cx| pane.refresh(cx)))
+        menu
     }
+}
+
+type MenuAction = fn(&mut FilePaneView, &mut Window, &mut Context<FilePaneView>);
+
+/// The context menu of a pane: `None` is a separator.
+fn menu_items(pane: PaneId) -> Vec<Option<(&'static str, MenuAction)>> {
+    let mut items: Vec<Option<(&'static str, MenuAction)>> = vec![Some((
+        if pane == PaneId::Remote {
+            "Download"
+        } else {
+            "Upload"
+        },
+        |pane, _, cx| pane.transfer_selection(cx),
+    ))];
+    items.push(None);
+    items.push(Some(("New folder…", |pane, window, cx| {
+        pane.new_folder(window, cx)
+    })));
+    items.push(Some(("Rename…", |pane, window, cx| {
+        pane.rename_entry(window, cx)
+    })));
+    items.push(Some(("Delete", |pane, _, cx| pane.delete_entries(cx))));
+    if pane == PaneId::Remote || cfg!(unix) {
+        items.push(Some(("Permissions…", |pane, window, cx| {
+            pane.open_permissions(window, cx)
+        })));
+    }
+    items.push(None);
+    items.push(Some(("Refresh", |pane, _, cx| pane.refresh(cx))));
+    items
+}
+
+/// The labels of a pane's context menu, in order (for tests).
+pub fn menu_labels(pane: PaneId) -> Vec<&'static str> {
+    menu_items(pane)
+        .into_iter()
+        .flatten()
+        .map(|(label, _)| label)
+        .collect()
 }
 
 pub struct FilePaneView {
@@ -515,9 +538,7 @@ impl Render for FilePaneView {
                 });
             }))
             .on_action(cx.listener(|this, _: &RefreshPane, _, cx| this.refresh(cx)))
-            .on_action(
-                cx.listener(|this, _: &NewRemoteFolder, window, cx| this.new_folder(window, cx)),
-            )
+            .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
             .on_action(
                 cx.listener(|this, _: &RenameEntry, window, cx| this.rename_entry(window, cx)),
             )
@@ -565,6 +586,9 @@ impl ErrorOf for Arc<AppState> {
 impl FilePaneView {
     /// The permissions dialog for the selection (or the row under the cursor).
     pub fn open_permissions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.pane == PaneId::Local && cfg!(windows) {
+            return;
+        }
         let names = self.target_names(cx);
         if names.is_empty() {
             return;
@@ -579,7 +603,7 @@ impl FilePaneView {
                 .and_then(|e| e.permissions)
                 .unwrap_or(0o644)
         };
-        crate::dialogs::permissions::open(self.model.clone(), names, mode, window, cx);
+        crate::dialogs::permissions::open(self.model.clone(), self.pane, names, mode, window, cx);
     }
 }
 
@@ -611,46 +635,38 @@ impl FilePaneView {
 }
 
 impl FilePaneView {
-    /// New remote folder (the local pane has no such operation).
+    /// Asks for a name and makes a folder in this pane's directory.
     pub fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pane != PaneId::Remote {
-            return;
-        }
-        let model = self.model.clone();
-        crate::dialogs::tree_ops::ask_name(window, cx, "New remote folder", "", move |name, cx| {
-            model.read(cx).send(Command::Mkdir {
-                pane: PaneId::Remote,
-                name,
-            });
+        let (model, pane) = (self.model.clone(), self.pane);
+        let title = match pane {
+            PaneId::Local => "New local folder",
+            PaneId::Remote => "New remote folder",
+        };
+        crate::dialogs::tree_ops::ask_name(window, cx, title, "", move |name, cx| {
+            model.read(cx).send(Command::Mkdir { pane, name });
         });
     }
 
-    /// Rename the entry under the cursor (remote only).
+    /// Rename the entry under the cursor.
     pub fn rename_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pane != PaneId::Remote {
-            return;
-        }
         let names = self.target_names(cx);
         let [from] = names.as_slice() else { return };
-        let (model, from) = (self.model.clone(), from.clone());
+        let (model, pane, from) = (self.model.clone(), self.pane, from.clone());
         crate::dialogs::tree_ops::ask_name(window, cx, "Rename", &from.clone(), move |to, cx| {
             model.read(cx).send(Command::Rename {
-                pane: PaneId::Remote,
+                pane,
                 from: from.clone(),
                 to,
             });
         });
     }
 
-    /// Delete the selection (remote only; the app asks for confirmation).
+    /// Delete the selection (the app asks for confirmation).
     pub fn delete_entries(&mut self, cx: &mut Context<Self>) {
-        if self.pane != PaneId::Remote {
-            return;
-        }
         let names = self.target_names(cx);
         if !names.is_empty() {
             self.model.read(cx).send(Command::Delete {
-                pane: PaneId::Remote,
+                pane: self.pane,
                 names,
             });
         }
