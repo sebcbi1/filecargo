@@ -137,7 +137,7 @@ async fn double_clicking_a_directory_navigates_into_it_and_the_parent_row_goes_u
         window.double_click(("row", 1usize), cx);
     })
     .unwrap();
-    let inside = dir.path().join("sub");
+    let inside = support::canonical(&dir.path().join("sub"));
     h.wait_state(cx, "to enter sub", {
         let inside = inside.clone();
         move |s| s.local.path == inside
@@ -149,7 +149,7 @@ async fn double_clicking_a_directory_navigates_into_it_and_the_parent_row_goes_u
         window.double_click(("row", 0usize), cx);
     })
     .unwrap();
-    let parent = dir.path().to_path_buf();
+    let parent = support::canonical(dir.path());
     h.wait_state(cx, "to go up", move |s| s.local.path == parent)
         .await;
 }
@@ -180,7 +180,7 @@ async fn the_selection_survives_a_refresh_of_names_that_exist_and_resets_on_navi
         pane: PaneId::Local,
         path: "sub".into(),
     });
-    let inside = dir.path().join("sub");
+    let inside = support::canonical(&dir.path().join("sub"));
     h.wait_state(cx, "to enter sub", move |s| s.local.path == inside)
         .await;
     cx.run_until_parked();
