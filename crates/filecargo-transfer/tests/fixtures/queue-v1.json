@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "next_id": 6,
+  "items": [
+    {
+      "id": 1,
+      "site": "7d1a9c2e-3b4f-4a5d-8e6f-0123456789ab",
+      "direction": "upload",
+      "local": "/home/me/site/index.html",
+      "remote": "/www/index.html",
+      "is_dir": false,
+      "size": 4096,
+      "transferred": 1024,
+      "attempts": 1,
+      "parent": null,
+      "conflict": null,
+      "state": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": 2,
+      "site": "7d1a9c2e-3b4f-4a5d-8e6f-0123456789ab",
+      "direction": "download",
+      "local": "/home/me/backup",
+      "remote": "/var/backup",
+      "is_dir": true,
+      "size": null,
+      "transferred": 0,
+      "attempts": 0,
+      "parent": null,
+      "conflict": "resume",
+      "state": {
+        "kind": "pending"
+      }
+    },
+    {
+      "id": 5,
+      "site": "7d1a9c2e-3b4f-4a5d-8e6f-0123456789ab",
+      "direction": "upload",
+      "local": "/home/me/site/missing.png",
+      "remote": "/www/missing.png",
+      "is_dir": false,
+      "size": null,
+      "transferred": 0,
+      "attempts": 3,
+      "parent": null,
+      "conflict": null,
+      "state": {
+        "kind": "failed",
+        "reason": "no such file",
+        "retryable": false,
+        "finished_unix": 1790000000
+      }
+    }
+  ]
+}

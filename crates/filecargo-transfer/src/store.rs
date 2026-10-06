@@ -1,7 +1,11 @@
 //! `<data>/queue.json`: the unfinished part of the queue, so a restart does not lose it.
 //!
-//! Saved: `Pending`, `Active` and `AwaitingDecision` (all as `Pending`, with their `transferred`
-//! offset) and `Failed`. Completed items are not persisted.
+//! Saved: `Held`, and `Pending`, `Active` and `AwaitingDecision` (all as `Pending`, with their
+//! `transferred` offset), and `Failed`. Completed items are not persisted.
+//!
+//! Loaded: every `Pending` and `Held` item comes back `Held`, so nothing starts after a restart
+//! until the owner says so. Version 1 files (no `held` state) load the same way; a file without
+//! a `version` field is read as version 1.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -12,10 +16,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Direction, ItemState, QueueItem, TransferError, TransferId};
 
-const VERSION: u32 = 1;
+/// Written by this release. Version 1 (v1.0) has no `held` state; it loads unchanged.
+const VERSION: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct File {
+    #[serde(default = "first_version")]
     version: u32,
     next_id: u64,
     items: Vec<Persisted>,
@@ -41,11 +47,16 @@ struct Persisted {
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum PersistedState {
     Pending,
+    Held,
     Failed {
         reason: String,
         retryable: bool,
         finished_unix: u64,
     },
+}
+
+fn first_version() -> u32 {
+    1
 }
 
 /// What `load` found.
@@ -61,10 +72,10 @@ fn unix(time: SystemTime) -> u64 {
 
 fn to_persisted(item: &QueueItem) -> Option<Persisted> {
     let state = match &item.state {
-        ItemState::Pending
-        | ItemState::Held
-        | ItemState::Active { .. }
-        | ItemState::AwaitingDecision { .. } => PersistedState::Pending,
+        ItemState::Held => PersistedState::Held,
+        ItemState::Pending | ItemState::Active { .. } | ItemState::AwaitingDecision { .. } => {
+            PersistedState::Pending
+        }
         ItemState::Failed {
             reason,
             retryable,
@@ -99,7 +110,8 @@ fn to_persisted(item: &QueueItem) -> Option<Persisted> {
 fn from_persisted(p: Persisted) -> Option<QueueItem> {
     let remote = RemotePath::parse(&p.remote).ok()?;
     let state = match p.state {
-        PersistedState::Pending => ItemState::Pending,
+        // restored items never start by themselves
+        PersistedState::Pending | PersistedState::Held => ItemState::Held,
         PersistedState::Failed {
             reason,
             retryable,
@@ -156,7 +168,7 @@ pub fn load(path: &Path) -> Loaded {
     let parsed = serde_json::from_slice::<File>(&bytes)
         .map_err(|e| e.to_string())
         .and_then(|f| {
-            if f.version == VERSION {
+            if (1..=VERSION).contains(&f.version) {
                 Ok(f)
             } else {
                 Err(format!("unsupported version {}", f.version))
@@ -239,10 +251,10 @@ mod tests {
     }
 
     #[test]
-    fn pending_and_failed_items_round_trip_exactly() {
+    fn held_and_failed_items_round_trip_exactly() {
         let finished = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
         let items = [
-            item(1, ItemState::Pending),
+            item(1, ItemState::Held),
             item(
                 2,
                 ItemState::Failed {
@@ -266,8 +278,9 @@ mod tests {
     }
 
     #[test]
-    fn active_and_awaiting_items_come_back_pending_with_their_offset() {
+    fn pending_active_and_awaiting_items_come_back_held_with_their_offset() {
         let items = [
+            item(0, ItemState::Pending),
             item(
                 1,
                 ItemState::Active {
@@ -282,9 +295,13 @@ mod tests {
             ),
         ];
         let loaded = round_trip(&items, 3);
-        assert_eq!(loaded.items.len(), 2);
+        assert_eq!(loaded.items.len(), 3);
         for (saved, restored) in items.iter().zip(&loaded.items) {
-            assert_eq!(restored.state, ItemState::Pending);
+            assert_eq!(
+                restored.state,
+                ItemState::Held,
+                "nothing starts after a restart"
+            );
             assert_eq!(restored.transferred, saved.transferred);
             assert_eq!(
                 (restored.id, &restored.local, &restored.remote),
@@ -299,7 +316,7 @@ mod tests {
             outcome: Outcome::Transferred,
             finished: SystemTime::now(),
         };
-        let loaded = round_trip(&[item(1, done), item(2, ItemState::Pending)], 3);
+        let loaded = round_trip(&[item(1, done), item(2, ItemState::Held)], 3);
         assert_eq!(loaded.items.len(), 1);
         assert_eq!(loaded.items[0].id, TransferId(2));
     }
@@ -307,7 +324,7 @@ mod tests {
     #[test]
     fn next_id_never_reuses_a_loaded_id() {
         // a stale `next_id` in the file must not cause a collision
-        let loaded = round_trip(&[item(7, ItemState::Pending)], 2);
+        let loaded = round_trip(&[item(7, ItemState::Held)], 2);
         assert_eq!(loaded.next_id, 8);
     }
 
@@ -348,9 +365,52 @@ mod tests {
     fn a_newer_version_is_backed_up_not_overwritten() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("queue.json");
-        std::fs::write(&path, r#"{"version":2,"next_id":5,"items":[]}"#).unwrap();
+        std::fs::write(&path, r#"{"version":3,"next_id":5,"items":[]}"#).unwrap();
         assert!(load(&path).items.is_empty());
         assert_eq!(backups(dir.path()).len(), 1);
+    }
+
+    #[test]
+    fn a_file_written_by_v1_loads_and_its_pending_items_come_back_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("queue.json");
+        std::fs::write(&path, include_str!("../tests/fixtures/queue-v1.json")).unwrap();
+        let loaded = load(&path);
+        let states: Vec<_> = loaded
+            .items
+            .iter()
+            .map(|i| (i.id.0, matches!(i.state, ItemState::Held), i.transferred))
+            .collect();
+        assert_eq!(states, [(1, true, 1024), (2, true, 0), (5, false, 0)]);
+        assert!(matches!(
+            &loaded.items[2].state,
+            ItemState::Failed { reason, retryable: false, .. } if reason == "no such file"
+        ));
+        assert_eq!(loaded.next_id, 6);
+        assert!(
+            backups(dir.path()).is_empty(),
+            "a v1 file is not a bad file"
+        );
+        assert!(path.exists(), "and it is left in place");
+    }
+
+    #[test]
+    fn a_file_without_a_version_is_read_as_v1() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("queue.json");
+        let text =
+            include_str!("../tests/fixtures/queue-v1.json").replacen("\"version\": 1,", "", 1);
+        assert!(!text.contains("version"));
+        std::fs::write(&path, text).unwrap();
+        assert_eq!(load(&path).items.len(), 3);
+    }
+
+    #[test]
+    fn saving_writes_the_current_version_and_keeps_held_items_held() {
+        let bytes = encode(&[item(1, ItemState::Held), item(2, ItemState::Pending)], 3).unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(text.contains("\"version\": 2"), "{text}");
+        assert!(text.contains("\"kind\": \"held\""), "{text}");
     }
 
     #[test]

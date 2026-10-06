@@ -209,12 +209,12 @@ Make `BackTab` match with or without `SHIFT`, both in the keymap and in dialog f
 - On load, Pending and interrupted items (v1 or v2) become Held. Failed items stay Failed.
 - Check in a fixture of a v1 file.
 **Acceptance:**
-- [ ] Round trip: held, pending and failed items are saved, then loaded as held, held and failed.
-- [ ] The v1 fixture loads, and its pending items become held.
-- [ ] After a restart nothing starts until `start_held`.
+- [x] Round trip: held, pending and failed items are saved, then loaded as held, held and failed.
+- [x] The v1 fixture loads, and its pending items become held.
+- [x] After a restart nothing starts until `start_held`.
 **Verify:**
-- [ ] `cargo test -p filecargo-transfer --test restart`
-- [ ] Unit tests in `store.rs`.
+- [x] `cargo test -p filecargo-transfer --test restart`
+- [x] Unit tests in `store.rs`.
 **Dependencies:** T9
 **Files:** `crates/filecargo-transfer/src/store.rs`, `crates/filecargo-transfer/tests/restart.rs`, `crates/filecargo-transfer/tests/fixtures/queue-v1.json` (new)
 **Scope:** S

@@ -35,7 +35,8 @@ async fn wait_for(
 }
 
 #[tokio::test]
-async fn pending_active_and_failed_items_survive_a_restart_and_the_partial_one_resumes() {
+async fn pending_active_and_failed_items_survive_a_restart_held_and_the_partial_one_resumes_when_started()
+ {
     let mut h = Harness::new(1).await;
     let data = sample_bytes(7, 6_000_000);
     std::fs::write(h.local.path().join("partial.bin"), &data).unwrap();
@@ -70,10 +71,23 @@ async fn pending_active_and_failed_items_survive_a_restart_and_the_partial_one_r
         "{saved}"
     );
 
-    // the new queue restored all three; the partial one is pending with its offset
+    // the new queue restored all three; the partial one is held with its offset, and nothing
+    // starts until the owner says so
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let restored = h.queue.snapshot();
     assert_eq!(restored.failed.len(), 1);
     assert_eq!(restored.failed[0].item.id, failed_id);
+    assert_eq!(restored.pending.len(), 2);
+    assert!(
+        restored
+            .pending
+            .iter()
+            .all(|v| matches!(v.item.state, ItemState::Held)),
+        "{restored:#?}"
+    );
+    assert!(restored.pending[0].item.transferred >= 2_000_000);
+    assert!(!h.server.path().join("waiting.bin").exists());
+    h.queue.start_held(h.site);
     h.idle().await;
 
     let arrived = std::fs::read(h.server.path().join("partial.bin")).unwrap();
@@ -208,6 +222,45 @@ async fn a_corrupt_queue_file_is_backed_up_the_queue_starts_empty_and_a_warning_
     assert!(
         log.contains("WARN") && log.contains("backed it up"),
         "{log}"
+    );
+    queue.shutdown().await;
+}
+
+#[tokio::test]
+async fn held_items_survive_a_restart_as_held_and_a_v1_file_loads() {
+    let h = Harness::new(1).await;
+    std::fs::write(h.local.path().join("a"), b"a").unwrap();
+    h.queue.enqueue_held(vec![upload(&h, "a")]);
+    wait_for(&h, "the held item", |s| s.pending.len() == 1).await;
+    let mut h = h.restart(1).await;
+    let restored = h.queue.snapshot();
+    assert_eq!(restored.pending.len(), 1);
+    assert!(matches!(restored.pending[0].item.state, ItemState::Held));
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(!h.server.path().join("a").exists());
+    h.queue.start_held(h.site);
+    h.idle().await;
+    assert_eq!(std::fs::read(h.server.path().join("a")).unwrap(), b"a");
+
+    // a queue.json written by v1.0 starts as a queue of held items
+    h.queue.shutdown().await;
+    let data = tempfile::tempdir().unwrap();
+    let store = data.path().join("queue.json");
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/queue-v1.json"),
+        &store,
+    )
+    .unwrap();
+    let (queue, _events) = Queue::start(TestConnector::new(), store, QueueLimits::default())
+        .await
+        .unwrap();
+    let snapshot = queue.snapshot();
+    assert_eq!((snapshot.pending.len(), snapshot.failed.len()), (2, 1));
+    assert!(
+        snapshot
+            .pending
+            .iter()
+            .all(|v| matches!(v.item.state, ItemState::Held))
     );
     queue.shutdown().await;
 }
