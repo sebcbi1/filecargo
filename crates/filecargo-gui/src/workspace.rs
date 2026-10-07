@@ -320,9 +320,6 @@ impl Render for Workspace {
         v_flex()
             .id("workspace")
             .key_context("Workspace")
-            .on_action(cx.listener(|_, _: &About, window, cx| {
-                crate::dialogs::about::open(window, cx);
-            }))
             .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
                 crate::dialogs::settings::open(this.model.clone(), window, cx);
             }))

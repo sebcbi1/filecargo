@@ -5,7 +5,6 @@
 pub mod bottom;
 pub mod dialogs;
 pub mod format;
-#[cfg(target_os = "linux")]
 pub mod icon;
 pub mod model;
 pub mod notices;

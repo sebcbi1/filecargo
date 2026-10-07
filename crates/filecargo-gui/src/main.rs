@@ -3,9 +3,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use filecargo_app_core::prelude::*;
 use filecargo_gui::model::AppModel;
-#[cfg(target_os = "macos")]
-use filecargo_gui::workspace::About;
-use filecargo_gui::workspace::{Quit, Workspace, bind_keys};
+use filecargo_gui::workspace::{About, Quit, Workspace, bind_keys};
 use gpui_kit::component::Theme;
 use gpui_kit::{
     App as GpuiApp, AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions, px, size,
@@ -42,6 +40,26 @@ fn main() -> Result<()> {
             // the app may ask for a confirmation first: the window closes when it has quit
             quitting.send(Command::Quit);
         });
+        // app-wide, so the macOS menu item is enabled whatever has the focus (or with no window)
+        let about_model = model.clone();
+        cx.on_action(move |_: &About, cx| {
+            let model = about_model.clone();
+            // the menu dispatches while the active window is being updated: open it afterwards
+            cx.defer(move |cx| {
+                let window = match cx.active_window().or_else(|| cx.windows().first().copied()) {
+                    Some(window) => window,
+                    None => match open_main_window(&model, cx) {
+                        Ok(window) => window,
+                        Err(_) => return,
+                    },
+                };
+                window
+                    .update(cx, |_, window, cx| {
+                        filecargo_gui::dialogs::about::open(window, cx)
+                    })
+                    .ok();
+            });
+        });
         #[cfg(target_os = "macos")]
         {
             use gpui_kit::{Menu, MenuItem};
@@ -71,7 +89,10 @@ struct MainModel(gpui_kit::Entity<AppModel>);
 impl gpui_kit::Global for MainModel {}
 
 /// Opens the main window on `model`.
-fn open_main_window(model: &gpui_kit::Entity<AppModel>, cx: &mut GpuiApp) -> Result<()> {
+fn open_main_window(
+    model: &gpui_kit::Entity<AppModel>,
+    cx: &mut GpuiApp,
+) -> Result<gpui_kit::AnyWindowHandle> {
     let options = WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
             None,
@@ -88,8 +109,8 @@ fn open_main_window(model: &gpui_kit::Entity<AppModel>, cx: &mut GpuiApp) -> Res
         ..Default::default()
     };
     let model = model.clone();
-    gpui_kit::open_window(options, cx, move |window, cx| {
+    let (window, _) = gpui_kit::open_window(options, cx, move |window, cx| {
         cx.new(|cx| Workspace::new(model, window, cx))
     })?;
-    Ok(())
+    Ok(window)
 }
