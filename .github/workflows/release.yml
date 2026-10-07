@@ -55,15 +55,16 @@ jobs:
           name="filecargo-${GITHUB_REF_NAME//\//-}-${{ matrix.name }}"
           mkdir "$name"
           exe=""; [ "${{ runner.os }}" = "Windows" ] && exe=".exe"
-          cp "target/release/filecargo-tui$exe" README.md LICENSE-MIT LICENSE-APACHE "$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "$name/"
           case "${{ runner.os }}" in
             macOS)
-              # the GUI ships as an app bundle (icon, ad-hoc signature), not as a bare binary
+              # both binaries ship inside the app bundle (icon, ad-hoc signature); the README
+              # tells users to symlink the TUI onto their PATH
               version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-              packaging/macos/make-app.sh target/release/filecargo "$version" "$name"
+              packaging/macos/make-app.sh target/release/filecargo "$version" "$name" target/release/filecargo-tui
               ;;
             Linux)
-              cp target/release/filecargo "$name/"
+              cp target/release/filecargo target/release/filecargo-tui "$name/"
               # copied to ~/.local/share by the user: the launcher and Wayland icon come from these
               install -Dm644 packaging/linux/filecargo.desktop "$name/share/applications/filecargo.desktop"
               for n in 16 24 32 48 64 128 256 512; do
@@ -71,7 +72,7 @@ jobs:
               done
               ;;
             *)
-              cp "target/release/filecargo$exe" "$name/"
+              cp "target/release/filecargo$exe" "target/release/filecargo-tui$exe" "$name/"
               ;;
           esac
           if [ "${{ matrix.ext }}" = "zip" ]; then

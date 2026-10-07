@@ -23,9 +23,14 @@ Sites, folders and settings are shared: a site added in one front-end exists in 
 Download the archive for your platform from the [Releases](../../releases) page and unpack it. Each
 archive contains the GUI and `filecargo-tui`. Release builds are not code-signed.
 
-- **macOS:** the GUI is `FileCargo.app`. Move it to `/Applications`, then on first launch allow it in
-  *System Settings → Privacy & Security* (it is only ad-hoc signed, not notarized). Run
-  `filecargo-tui` from a terminal.
+- **macOS:** both programs are in `FileCargo.app`. Move it to `/Applications`, then on first launch
+  allow it in *System Settings → Privacy & Security* (it is only ad-hoc signed, not notarized). To
+  run `filecargo-tui` from a terminal, link it onto your `PATH`:
+
+  ```bash
+  mkdir -p ~/.local/bin
+  ln -sf /Applications/FileCargo.app/Contents/MacOS/filecargo-tui ~/.local/bin/filecargo-tui
+  ```
 - **Windows:** run `filecargo.exe` (GUI) or `filecargo-tui.exe`. SmartScreen may warn.
 - **Linux:** run `filecargo` (GUI) or `filecargo-tui`. For the launcher entry and the icon (Wayland
   needs them), copy the binaries to a directory on your `PATH` and the `share/` folder into

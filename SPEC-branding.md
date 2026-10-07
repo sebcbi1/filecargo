@@ -87,16 +87,18 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
   - `NSHighResolutionCapable` = true
   - `LSMinimumSystemVersion` = the deployment target the binary is actually built for (read with
     `vtool -show-build` during implementation, not guessed)
-- `packaging/macos/make-app.sh <binary> <version> <out dir>` assembles `FileCargo.app/Contents/{Info.plist,
-  MacOS/filecargo, Resources/filecargo.icns}`, fills `LSMinimumSystemVersion` from the binary's
-  `minos` (`vtool -show-build`), runs `plutil -lint`, ad-hoc signs the finished bundle with
-  `codesign --force --sign -`, then verifies with `codesign --verify --strict`. The two macOS
+- `packaging/macos/make-app.sh <binary> <version> <out dir> [tui binary]` assembles
+  `FileCargo.app/Contents/{Info.plist, MacOS/filecargo, MacOS/filecargo-tui, Resources/filecargo.icns}`
+  (the TUI only when given), fills `LSMinimumSystemVersion` from the binary's `minos`
+  (`vtool -show-build`), runs `plutil -lint`, ad-hoc signs the TUI as nested code and then the
+  finished bundle with `codesign --force --sign -`, then verifies with `codesign --verify --strict`. The two macOS
   release legs call it, and it can be run locally to look at the real Dock icon.
-- macOS archive contents: `FileCargo.app`, `filecargo-tui`, README and licenses. There is no bare
-  `filecargo` binary next to the app. Windows and Linux archives keep their current layout, plus
+- macOS archive contents: `FileCargo.app` (with `filecargo-tui` inside, in `Contents/MacOS`),
+  README and licenses. There is no bare binary next to the app. Windows and Linux archives keep their current layout, plus
   the `share/` tree on Linux.
 - README: unpack, move `FileCargo.app` to `/Applications`, and allow it on first launch in
-  *System Settings → Privacy & Security* (it is still not notarized).
+  *System Settings → Privacy & Security* (it is still not notarized). The TUI is symlinked from
+  the bundle onto the `PATH`.
 - `release.yml` gains a `workflow_dispatch` trigger that builds and uploads the archives as
   workflow artifacts **without publishing**. The tag/version check and the `publish` job run on
   tag pushes only. This tests packaging before a tag.
@@ -222,7 +224,7 @@ silently break. The rest is a manual smoke list.
   - `unsafe` (including Objective-C calls for the Dock icon).
   - Fail GUI startup because of an icon.
   - Publish a release or push a tag without being asked.
-  - Ship the bare `filecargo` binary next to `FileCargo.app` in the macOS archive.
+  - Ship bare binaries next to `FileCargo.app` in the macOS archive.
 
 ## Success Criteria
 
