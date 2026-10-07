@@ -5,7 +5,7 @@ Use a fresh config directory so nothing depends on earlier runs:
 
 ```bash
 docker compose -f tests/docker/compose.yml up -d --build --wait   # SFTP 2222, FTP 2121, FTPS 9990 / 2122 …
-FILECARGO_CONFIG_DIR="$(mktemp -d)" cargo run -p filecargo-gui     # Linux build deps: see SPEC-gui.md / shell.nix
+FILECARGO_CONFIG_DIR="$(mktemp -d)" cargo run -p filecargo-gui     # Linux build deps: see README.md / shell.nix
 ```
 
 The test servers' logins are in `tests/docker/README.md` (SFTP `fcuser` / `fcpass`, FTP `ftpuser` /

@@ -1,2 +1,29 @@
 /target
 .DS_Store
+
+# insta: snapshots waiting for review (filecargo-tui uses insta)
+*.snap.new
+*.pending-snap
+
+# local runs of the release packaging
+/dist/
+/filecargo-v*/
+/*.tar.gz
+/*.zip
+
+# AppImage
+*.AppImage
+/AppDir/
+squashfs-root/
+
+# AUR builds with makepkg (packaging/aur/)
+/packaging/aur/pkg/
+/packaging/aur/src/
+/packaging/aur/*.pkg.tar.*
+/packaging/aur/*.tar.gz
+
+# local tooling and secrets
+.env
+.envrc
+.direnv/
+.claude/

@@ -84,8 +84,7 @@ cargo test -p filecargo-gui     # GUI tests are headless; needs the GUI build de
 ```
 
 Layout: `crates/filecargo-{config,remote-fs,transfer,terminal,app-core}` are the shared core,
-`filecargo-tui` and `filecargo-gui` the front-ends. The design lives in `SPEC.md` and
-`SPEC-*.md`; per-module plans and hand-off notes are in `tasks/`.
+`filecargo-tui` and `filecargo-gui` the front-ends.
 
 Manual smoke checklists: `crates/filecargo-tui/SMOKE.md`, `crates/filecargo-gui/SMOKE.md`.
 

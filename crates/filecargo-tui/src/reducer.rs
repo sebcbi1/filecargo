@@ -2764,8 +2764,8 @@ mod binding_table_tests {
     }
 
     #[test]
-    fn the_spec_table_rows_all_have_bindings() {
-        // the rows of SPEC-tui.md's "Key bindings" table, by help text fragment per context
+    fn the_key_binding_rows_all_have_bindings() {
+        // the documented key bindings (the F1 help), by help text fragment per context
         let wanted = [
             "focus the next area",
             "focus the previous area",
