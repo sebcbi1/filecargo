@@ -154,12 +154,12 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 - Update the README Install section for Linux: copy `share/` to `~/.local/share/` and the binaries
   into a directory on `PATH`.
 **Acceptance:**
-- [ ] `desktop-file-validate` passes in the release job, and a failure stops packaging.
-- [ ] Linux archives contain the `share/` tree with 8 icon sizes.
-- [ ] Following the README on Wayland shows the logo in the dock or launcher.
+- [ ] (pending CI) `desktop-file-validate` passes in the release job, and a failure stops packaging.
+- [ ] (pending CI) Linux archives contain the `share/` tree with 8 icon sizes.
+- [ ] (pending manual) Following the README on Wayland shows the logo in the dock or launcher.
 **Verify:**
-- [ ] Dispatch run at Checkpoint B: `tar tzf` on a Linux archive lists the `share/` tree.
-- [ ] Manual (Linux Wayland, Checkpoint B), if available.
+- [ ] (pending CI) Dispatch run at Checkpoint B: `tar tzf` on a Linux archive lists the `share/` tree.
+- [ ] (pending manual) Manual (Linux Wayland, Checkpoint B), if available.
 **Dependencies:** T1, T5 (dispatch mode to verify)
 **Files:** `assets/linux/filecargo.desktop`, `.github/workflows/release.yml`, `README.md`
 **Scope:** S

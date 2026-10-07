@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=filecargo
+GenericName=FTP/SFTP Client
+Comment=Transfer files over SFTP, FTP and FTPS
+Exec=filecargo
+Icon=filecargo
+Terminal=false
+Categories=Network;FileTransfer;
+StartupWMClass=filecargo

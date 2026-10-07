@@ -25,7 +25,14 @@ archive contains the GUI and `filecargo-tui`. Release builds are not code-signed
   *System Settings → Privacy & Security* (it is only ad-hoc signed, not notarized). Run
   `filecargo-tui` from a terminal.
 - **Windows:** run `filecargo.exe` (GUI) or `filecargo-tui.exe`. SmartScreen may warn.
-- **Linux:** run `filecargo` (GUI) or `filecargo-tui`.
+- **Linux:** run `filecargo` (GUI) or `filecargo-tui`. For the launcher entry and the icon (Wayland
+  needs them), copy the binaries to a directory on your `PATH` and the `share/` folder into
+  `~/.local/share/`:
+
+  ```bash
+  install -Dm755 filecargo filecargo-tui -t ~/.local/bin
+  cp -r share/. ~/.local/share/
+  ```
 
 ## Build from source
 

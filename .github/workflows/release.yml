@@ -41,11 +41,13 @@ jobs:
       - if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig-dev libfreetype-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev libvulkan1 mesa-vulkan-drivers
+          sudo apt-get install -y libfontconfig-dev libfreetype-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev libvulkan1 mesa-vulkan-drivers desktop-file-utils
       - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: desktop-file-validate assets/linux/filecargo.desktop
       - run: cargo build --release --locked -p filecargo-tui -p filecargo-gui
       - name: Package
         shell: bash
@@ -54,13 +56,24 @@ jobs:
           mkdir "$name"
           exe=""; [ "${{ runner.os }}" = "Windows" ] && exe=".exe"
           cp "target/release/filecargo-tui$exe" README.md LICENSE-MIT LICENSE-APACHE "$name/"
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            # the GUI ships as an app bundle (icon, ad-hoc signature), not as a bare binary
-            version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-            assets/macos/make-app.sh target/release/filecargo "$version" "$name"
-          else
-            cp "target/release/filecargo$exe" "$name/"
-          fi
+          case "${{ runner.os }}" in
+            macOS)
+              # the GUI ships as an app bundle (icon, ad-hoc signature), not as a bare binary
+              version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+              assets/macos/make-app.sh target/release/filecargo "$version" "$name"
+              ;;
+            Linux)
+              cp target/release/filecargo "$name/"
+              # copied to ~/.local/share by the user: the launcher and Wayland icon come from these
+              install -Dm644 assets/linux/filecargo.desktop "$name/share/applications/filecargo.desktop"
+              for n in 16 24 32 48 64 128 256 512; do
+                install -Dm644 "assets/icons/png/filecargo-$n.png" "$name/share/icons/hicolor/${n}x${n}/apps/filecargo.png"
+              done
+              ;;
+            *)
+              cp "target/release/filecargo$exe" "$name/"
+              ;;
+          esac
           if [ "${{ matrix.ext }}" = "zip" ]; then
             7z a "$name.zip" "$name" > /dev/null
           else
