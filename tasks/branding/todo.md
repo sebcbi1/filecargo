@@ -134,13 +134,13 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 - Update the README Install section for macOS: move the app to `/Applications`, then allow it in
   Privacy & Security on first launch.
 **Acceptance:**
-- [ ] A dispatch run on a branch builds 6 archives as artifacts, and no release is created.
-- [ ] A tag push behaves as before (the check runs, and publish runs).
-- [ ] macOS archives unpack to a `filecargo.app` that passes `codesign --verify --strict`.
+- [ ] (pending CI) A dispatch run on a branch builds 6 archives as artifacts, and no release is created.
+- [x] A tag push behaves as before (the check runs, and publish runs).
+- [x] macOS archives unpack (simulated locally: tar, extract, `codesign --verify --strict`) to a `filecargo.app` that passes `codesign --verify --strict`.
 **Verify:**
-- [ ] `actionlint .github/workflows/release.yml` if installed (installing it needs approval).
+- [x] `actionlint .github/workflows/release.yml` if installed (installing it needs approval).
       Otherwise `ruby -ryaml -e 'YAML.load_file(ARGV[0])' .github/workflows/release.yml`.
-- [ ] Dispatch run at Checkpoint B: `gh run download`, then `tar tzf` shows the bundle layout.
+- [ ] (pending CI) Dispatch run at Checkpoint B: `gh run download`, then `tar tzf` shows the bundle layout.
 **Dependencies:** T2
 **Files:** `.github/workflows/release.yml`, `README.md`
 **Scope:** S

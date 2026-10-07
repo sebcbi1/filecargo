@@ -18,10 +18,14 @@ Sites, folders and settings are shared: a site added in one front-end exists in 
 
 ## Install
 
-Download the archive for your platform from the [Releases](../../releases) page, unpack it and run
-`filecargo` (GUI) or `filecargo-tui`. Each archive contains both binaries. Release builds are not
-code-signed: on macOS you may need to allow the app in *System Settings → Privacy & Security*, on
-Windows SmartScreen may warn.
+Download the archive for your platform from the [Releases](../../releases) page and unpack it. Each
+archive contains the GUI and `filecargo-tui`. Release builds are not code-signed.
+
+- **macOS:** the GUI is `filecargo.app`. Move it to `/Applications`, then on first launch allow it in
+  *System Settings → Privacy & Security* (it is only ad-hoc signed, not notarized). Run
+  `filecargo-tui` from a terminal.
+- **Windows:** run `filecargo.exe` (GUI) or `filecargo-tui.exe`. SmartScreen may warn.
+- **Linux:** run `filecargo` (GUI) or `filecargo-tui`.
 
 ## Build from source
 
