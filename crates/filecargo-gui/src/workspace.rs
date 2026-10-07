@@ -104,7 +104,7 @@ impl Workspace {
         // the remote pane only has something to act on while connected
         let files_ready = self.focused_pane == PaneId::Local || connected;
         let can_connect = self.selected_site(cx).is_some() && !busy;
-        h_flex()
+        let toolbar = h_flex()
             .px_2()
             .py_1()
             .gap_1()
@@ -196,15 +196,6 @@ impl Workspace {
                     })),
             )
             .child(
-                Button::new("about")
-                    .small()
-                    .icon(IconName::Info)
-                    .label("About")
-                    .on_click(cx.listener(|_, _, window, cx| {
-                        crate::dialogs::about::open(window, cx);
-                    })),
-            )
-            .child(
                 Button::new("upload")
                     .small()
                     .icon(gpui_kit::assets::IconName::Upload)
@@ -282,7 +273,19 @@ impl Workspace {
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
                     .child(session_label(&state)),
-            )
+            );
+        // macOS has About in the app menu
+        #[cfg(not(target_os = "macos"))]
+        let toolbar = toolbar.child(
+            Button::new("about")
+                .small()
+                .icon(IconName::Info)
+                .tooltip("About FileCargo")
+                .on_click(cx.listener(|_, _, window, cx| {
+                    crate::dialogs::about::open(window, cx);
+                })),
+        );
+        toolbar
     }
 }
 

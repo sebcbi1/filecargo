@@ -55,8 +55,8 @@ prompt). On Windows the release build needs `fxc.exe` from the Windows SDK (`GPU
    - [ ] The README shows the centered logo above the title on GitHub, in light and dark themes.
 
 11. **About, menu bar and window lifecycle**
-   - [ ] All platforms: the toolbar's *About* button opens a dialog with the app name, version, licence and a *Repository* button that opens the project page; *Close* dismisses it.
-   - [ ] macOS: the menu bar shows *FileCargo* with *About FileCargo* and *Quit FileCargo* (⌘Q).
+   - [ ] Windows / Linux: the ⓘ button at the right end of the toolbar (tooltip *About FileCargo*) opens a dialog with the app name, version, licence and a *Repository* button that opens the project page; *Close* dismisses it.
+   - [ ] macOS: the menu bar shows *FileCargo* with *About FileCargo* (opens the same dialog) and *Quit FileCargo* (⌘Q); the toolbar has no About button.
    - [ ] macOS: the red close button closes the window; the app stays in the Dock and a running transfer keeps going; clicking the Dock icon brings the window back with the same state.
    - [ ] macOS: ⌘Q with no window open and a transfer running reopens the window and asks "Quit anyway?"; without transfers it quits.
    - [ ] Windows / Linux: closing the window quits the app (unchanged).
