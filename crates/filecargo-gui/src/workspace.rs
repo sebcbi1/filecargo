@@ -179,14 +179,6 @@ impl Workspace {
                     })),
             )
             .child(
-                Button::new("import")
-                    .small()
-                    .label("Import…")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        crate::dialogs::tree_ops::import(this.model.clone(), window, cx);
-                    })),
-            )
-            .child(
                 Button::new("settings")
                     .small()
                     .icon(IconName::Settings)

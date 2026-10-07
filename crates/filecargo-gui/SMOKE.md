@@ -61,6 +61,9 @@ prompt). On Windows the release build needs `fxc.exe` from the Windows SDK (`GPU
    - [ ] macOS: ⌘Q with no window open and a transfer running reopens the window and asks "Quit anyway?"; without transfers it quits.
    - [ ] Windows / Linux: closing the window quits the app (unchanged).
 
+12. **Import**
+   - [ ] The toolbar has no Import button; *Settings* has a *Server list → Import from FileZilla…* button that opens the import dialog, and importing adds the sites to the tree.
+
 ## Automated coverage that stands in for part of this list
 
 | What | Where |

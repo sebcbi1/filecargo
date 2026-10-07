@@ -1,11 +1,12 @@
 //! The settings dialog.
 
 use filecargo_app_core::prelude::*;
+use gpui_kit::component::button::Button;
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::searchable_list::SearchableVec;
 use gpui_kit::component::select::{Select, SelectState};
-use gpui_kit::component::{ActiveTheme as _, IndexPath, h_flex, v_flex};
+use gpui_kit::component::{ActiveTheme as _, IndexPath, Sizable as _, h_flex, v_flex};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement as _, Render, SharedString,
     Styled as _, Window, div, px,
@@ -237,6 +238,15 @@ impl Render for SettingsView {
             .child(Self::row(
                 "Log level",
                 Select::new(&self.log_level).id("set-log"),
+            ))
+            .child(Self::row(
+                "Server list",
+                Button::new("set-import")
+                    .small()
+                    .label("Import from FileZilla…")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        super::tree_ops::import(this.model.clone(), window, cx);
+                    })),
             ))
             .child(
                 Checkbox::new("set-hidden")
