@@ -27,8 +27,8 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
 | `icon-assets` | A script that renders every derived icon file from `logo.svg`. Its outputs are committed. | `assets/` |
 | `win-icon` | Embed `filecargo.ico` as resource id 1 in `filecargo.exe` | `crates/filecargo-gui/{build.rs,Cargo.toml}` |
 | `x11-icon` | Pass the logo as `WindowOptions.icon` on Linux | `crates/filecargo-gui/src/{main,icon}.rs` |
-| `linux-desktop` | `filecargo.desktop` and hicolor PNGs in the Linux archives, with install steps in the README | `assets/linux/`, `release.yml`, README |
-| `mac-app` | `FileCargo.app` (Info.plist + `.icns`, ad-hoc signed) in the macOS archives | `assets/macos/`, `release.yml`, README |
+| `linux-desktop` | `filecargo.desktop` and hicolor PNGs in the Linux archives, with install steps in the README | `packaging/linux/`, `release.yml`, README |
+| `mac-app` | `FileCargo.app` (Info.plist + `.icns`, ad-hoc signed) in the macOS archives | `packaging/macos/`, `release.yml`, README |
 | `readme-logo` | Centered logo header in the README | `README.md` |
 
 ### icon-assets
@@ -67,7 +67,7 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
 
 ### linux-desktop
 
-- `assets/linux/filecargo.desktop`: `Type=Application`, `Name=filecargo`,
+- `packaging/linux/filecargo.desktop`: `Type=Application`, `Name=filecargo`,
   `GenericName=FTP/SFTP Client`, `Exec=filecargo`, `Icon=filecargo`, `Terminal=false`,
   `Categories=Network;FileTransfer;`, `StartupWMClass=filecargo`.
 - The Linux release archives gain `share/applications/filecargo.desktop` and
@@ -77,7 +77,7 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
 
 ### mac-app
 
-- `assets/macos/Info.plist` is a template:
+- `packaging/macos/Info.plist` is a template:
   - `CFBundleName` / `CFBundleDisplayName` = `filecargo`
   - `CFBundleIdentifier` = `io.github.sebcbi1.filecargo`
   - `CFBundleExecutable` = `filecargo`, `CFBundleIconFile` = `filecargo`,
@@ -87,7 +87,7 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
   - `NSHighResolutionCapable` = true
   - `LSMinimumSystemVersion` = the deployment target the binary is actually built for (read with
     `vtool -show-build` during implementation, not guessed)
-- `assets/macos/make-app.sh <binary> <version> <out dir>` assembles `FileCargo.app/Contents/{Info.plist,
+- `packaging/macos/make-app.sh <binary> <version> <out dir>` assembles `FileCargo.app/Contents/{Info.plist,
   MacOS/filecargo, Resources/filecargo.icns}`, fills `LSMinimumSystemVersion` from the binary's
   `minos` (`vtool -show-build`), runs `plutil -lint`, ad-hoc signs the finished bundle with
   `codesign --force --sign -`, then verifies with `codesign --verify --strict`. The two macOS
@@ -142,6 +142,7 @@ assets/
 │   ├── filecargo.ico             # win-icon
 │   ├── filecargo.icns            # mac-app (Apple grid)
 │   └── png/filecargo-<n>.png     # x11-icon (256), linux-desktop (all)
+packaging/
 ├── linux/filecargo.desktop       # linux-desktop
 └── macos/{Info.plist,make-app.sh} # mac-app template and bundle assembly
 crates/filecargo-gui/
@@ -189,7 +190,7 @@ silently break. The rest is a manual smoke list.
 - **Release workflow checks** (in the packaging steps, failing the job):
   - macOS: `plutil -lint`, `codesign --verify --strict`, and `test -f` on the icns and executable
     inside the bundle.
-  - Linux: `desktop-file-validate assets/linux/filecargo.desktop`. This adds `desktop-file-utils`
+  - Linux: `desktop-file-validate packaging/linux/filecargo.desktop`. This adds `desktop-file-utils`
     to the existing `apt-get install` line.
 - **Assets:** `icons.sh` ends by checking with `magick identify` / `iconutil` that every output
   exists at its expected sizes. It exits non-zero otherwise.

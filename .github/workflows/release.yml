@@ -47,7 +47,7 @@ jobs:
         with:
           key: ${{ matrix.target }}
       - if: runner.os == 'Linux'
-        run: desktop-file-validate assets/linux/filecargo.desktop
+        run: desktop-file-validate packaging/linux/filecargo.desktop
       - run: cargo build --release --locked -p filecargo-tui -p filecargo-gui
       - name: Package
         shell: bash
@@ -60,12 +60,12 @@ jobs:
             macOS)
               # the GUI ships as an app bundle (icon, ad-hoc signature), not as a bare binary
               version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-              assets/macos/make-app.sh target/release/filecargo "$version" "$name"
+              packaging/macos/make-app.sh target/release/filecargo "$version" "$name"
               ;;
             Linux)
               cp target/release/filecargo "$name/"
               # copied to ~/.local/share by the user: the launcher and Wayland icon come from these
-              install -Dm644 assets/linux/filecargo.desktop "$name/share/applications/filecargo.desktop"
+              install -Dm644 packaging/linux/filecargo.desktop "$name/share/applications/filecargo.desktop"
               for n in 16 24 32 48 64 128 256 512; do
                 install -Dm644 "assets/icons/png/filecargo-$n.png" "$name/share/icons/hicolor/${n}x${n}/apps/filecargo.png"
               done

@@ -53,15 +53,15 @@ T3, T4 and T7 don't depend on each other and can be done in any order (or in par
 
 ### macOS bundle assembly lives in a script, not in YAML (amends the spec)
 
-- `assets/macos/make-app.sh <filecargo binary> <version> <out dir>`:
-  1. Builds `FileCargo.app` from `assets/macos/Info.plist` (placeholders `__VERSION__`,
+- `packaging/macos/make-app.sh <filecargo binary> <version> <out dir>`:
+  1. Builds `FileCargo.app` from `packaging/macos/Info.plist` (placeholders `__VERSION__`,
      `__MIN_MACOS__`) and the `.icns`.
   2. Reads `LSMinimumSystemVersion` from the binary itself (`vtool -show-build` → `minos`), so it
      always matches what the build really targets (Intel and arm64 differ).
   3. `plutil -lint`, `codesign --force --sign -`, then `codesign --verify --strict`.
 - The same script runs locally (T2) and in `release.yml` (T5). This is the only way to look at
   the real Dock icon before CI.
-- **Spec amendment (in T2):** add `assets/macos/make-app.sh` to the spec's mac-app section and
+- **Spec amendment (in T2):** add `packaging/macos/make-app.sh` to the spec's mac-app section and
   Project Structure.
 
 ### Windows resource (spec `win-icon`)

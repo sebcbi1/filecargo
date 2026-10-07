@@ -39,9 +39,9 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 
 ### T2: `FileCargo.app` built locally with `make-app.sh`
 **Description:**
-- Add `assets/macos/Info.plist` (template, keys from the spec, placeholders `__VERSION__` and
+- Add `packaging/macos/Info.plist` (template, keys from the spec, placeholders `__VERSION__` and
   `__MIN_MACOS__`).
-- Add `assets/macos/make-app.sh <binary> <version> <out-dir>`:
+- Add `packaging/macos/make-app.sh <binary> <version> <out-dir>`:
   1. Assembles `FileCargo.app`.
   2. Fills `LSMinimumSystemVersion` from `vtool -show-build`.
   3. Lints, ad-hoc signs the whole bundle, then verifies.
@@ -56,11 +56,11 @@ It checks its tools first and ends with a size check. Run it and commit its outp
       `icons.sh`, regenerate, and re-check.
 - [x] Bad arguments (missing binary, missing version) exit non-zero with a usage line.
 **Verify:**
-- [x] `cargo build --release -p filecargo-gui && assets/macos/make-app.sh target/release/filecargo 0.1.0 /tmp/fc-app`
+- [x] `cargo build --release -p filecargo-gui && packaging/macos/make-app.sh target/release/filecargo 0.1.0 /tmp/fc-app`
 - [x] `/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' /tmp/fc-app/FileCargo.app/Contents/Info.plist`
 - [ ] Manual: Dock screenshot shared with the user (Checkpoint A).
 **Dependencies:** T1
-**Files:** `assets/macos/Info.plist`, `assets/macos/make-app.sh`, `SPEC-branding.md` (amendment), `assets/icons.sh` + `assets/icons/filecargo.icns` (only if the mask fallback is needed)
+**Files:** `packaging/macos/Info.plist`, `packaging/macos/make-app.sh`, `SPEC-branding.md` (amendment), `assets/icons.sh` + `assets/icons/filecargo.icns` (only if the mask fallback is needed)
 **Scope:** S
 
 ### Checkpoint A: macOS icon looks right
@@ -129,7 +129,7 @@ It checks its tools first and ends with a size check. Run it and commit its outp
   - The tag/version check runs only on tags.
   - `publish` runs only on tags.
   - Archive names replace `/` in the ref name with `-`.
-- On the macOS legs, package with `assets/macos/make-app.sh`. The archive holds `FileCargo.app`,
+- On the macOS legs, package with `packaging/macos/make-app.sh`. The archive holds `FileCargo.app`,
   `filecargo-tui`, README and licenses, and no bare `filecargo`.
 - Update the README Install section for macOS: move the app to `/Applications`, then allow it in
   Privacy & Security on first launch.
@@ -147,7 +147,7 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 
 ### T6: Linux desktop entry and icons in the archive
 **Description:**
-- Add `assets/linux/filecargo.desktop` (keys from the spec, `StartupWMClass=filecargo`).
+- Add `packaging/linux/filecargo.desktop` (keys from the spec, `StartupWMClass=filecargo`).
 - On the Linux legs: add `desktop-file-utils` to the apt line, run `desktop-file-validate`, and
   put `share/applications/filecargo.desktop` and `share/icons/hicolor/<n>x<n>/apps/filecargo.png`
   (every PNG size) into the archive.
@@ -161,7 +161,7 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 - [ ] (pending CI) Dispatch run at Checkpoint B: `tar tzf` on a Linux archive lists the `share/` tree.
 - [ ] (pending manual) Manual (Linux Wayland, Checkpoint B), if available.
 **Dependencies:** T1, T5 (dispatch mode to verify)
-**Files:** `assets/linux/filecargo.desktop`, `.github/workflows/release.yml`, `README.md`
+**Files:** `packaging/linux/filecargo.desktop`, `.github/workflows/release.yml`, `README.md`
 **Scope:** S
 
 ### T7: README logo header

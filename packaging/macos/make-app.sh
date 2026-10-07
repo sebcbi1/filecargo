@@ -14,7 +14,7 @@ out="$3"
 [ -n "$version" ] || { echo "make-app.sh: empty version" >&2; exit 1; }
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-icon="$here/../icons/filecargo.icns"
+icon="$here/../../assets/icons/filecargo.icns"
 [ -f "$icon" ] || { echo "make-app.sh: missing $icon (run assets/icons.sh)" >&2; exit 1; }
 
 # the deployment target the binary was really built for (Intel and arm64 builds differ)
