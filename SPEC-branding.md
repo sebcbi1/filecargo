@@ -86,9 +86,11 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
   - `NSHighResolutionCapable` = true
   - `LSMinimumSystemVersion` = the deployment target the binary is actually built for (read with
     `vtool -show-build` during implementation, not guessed)
-- On the two macOS legs, the release job assembles `filecargo.app/Contents/{Info.plist,
-  MacOS/filecargo, Resources/filecargo.icns}`, runs `plutil -lint`, ad-hoc signs with
-  `codesign --force --sign - filecargo.app`, then verifies with `codesign --verify`.
+- `assets/macos/make-app.sh <binary> <version> <out dir>` assembles `filecargo.app/Contents/{Info.plist,
+  MacOS/filecargo, Resources/filecargo.icns}`, fills `LSMinimumSystemVersion` from the binary's
+  `minos` (`vtool -show-build`), runs `plutil -lint`, ad-hoc signs the finished bundle with
+  `codesign --force --sign -`, then verifies with `codesign --verify --strict`. The two macOS
+  release legs call it, and it can be run locally to look at the real Dock icon.
 - macOS archive contents: `filecargo.app`, `filecargo-tui`, README and licenses. There is no bare
   `filecargo` binary next to the app. Windows and Linux archives keep their current layout, plus
   the `share/` tree on Linux.
@@ -140,7 +142,7 @@ assets/
 │   ├── filecargo.icns            # mac-app (Apple grid)
 │   └── png/filecargo-<n>.png     # x11-icon (256), linux-desktop (all)
 ├── linux/filecargo.desktop       # linux-desktop
-└── macos/Info.plist              # mac-app template
+└── macos/{Info.plist,make-app.sh} # mac-app template and bundle assembly
 crates/filecargo-gui/
 ├── build.rs                      # win-icon (Windows targets only)
 ├── windows/filecargo.rc          # win-icon

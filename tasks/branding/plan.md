@@ -104,8 +104,8 @@ T3, T4 and T7 don't depend on each other and can be done in any order (or in par
 ## Task list
 
 ### Phase 1: Assets and the macOS check (local)
-- [ ] T1: `icons.sh` and the committed icon set
-- [ ] T2: `filecargo.app` built locally with `make-app.sh`
+- [x] T1: `icons.sh` and the committed icon set
+- [x] T2: `filecargo.app` built locally with `make-app.sh`
 
 ### Checkpoint A: macOS icon looks right
 - [ ] The Dock / ⌘-Tab / Finder show the logo at neighbour size, with no grey container. If a grey

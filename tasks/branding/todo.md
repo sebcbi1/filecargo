@@ -23,15 +23,15 @@
 
 It checks its tools first and ends with a size check. Run it and commit its outputs.
 **Acceptance:**
-- [ ] With a tool missing (e.g. `PATH` without `iconutil`), it exits non-zero and names the tool.
-- [ ] A run on a clean checkout produces `assets/icons/png/filecargo-{16..512}.png`,
+- [x] With a tool missing (e.g. `PATH` without `iconutil`), it exits non-zero and names the tool.
+- [x] A run on a clean checkout produces `assets/icons/png/filecargo-{16..512}.png`,
       `assets/icons/filecargo.ico` and `assets/icons/filecargo.icns`, and the final size check
       passes.
-- [ ] A second run changes no file (`jj diff` is empty).
+- [x] A second run changes no file (`jj diff` is empty).
 **Verify:**
-- [ ] `assets/icons.sh` exits 0, and `magick identify assets/icons/filecargo.ico` lists 7 sizes.
-- [ ] `iconutil -c iconset -o /tmp/fc.iconset assets/icons/filecargo.icns` lists 10 images.
-- [ ] Manual: look at the 16/32/256 PNGs and one icns layer. The icns tile has a transparent
+- [x] `assets/icons.sh` exits 0, and `magick identify assets/icons/filecargo.ico` lists 7 sizes.
+- [x] `iconutil -c iconset -o /tmp/fc.iconset assets/icons/filecargo.icns` lists 10 images.
+- [x] Manual: look at the 16/32/256 PNGs and one icns layer. The icns tile has a transparent
       margin; the PNGs are full bleed.
 **Dependencies:** none
 **Files:** `assets/icons.sh`, `assets/icons/**` (generated)
@@ -48,16 +48,16 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 - First amend `SPEC-branding.md` (mac-app + Project Structure) for the script.
 - Build a release GUI locally and launch the bundle.
 **Acceptance:**
-- [ ] `make-app.sh` on `target/release/filecargo` produces a bundle that passes `plutil -lint`
+- [x] `make-app.sh` on `target/release/filecargo` produces a bundle that passes `plutil -lint`
       and `codesign --verify --strict --verbose=2`.
-- [ ] The bundle's `Info.plist` has the workspace version and the binary's `minos`.
+- [x] The bundle's `Info.plist` has the workspace version and the binary's `minos`.
 - [ ] `open filecargo.app` starts the GUI. The Dock, ⌘-Tab and Finder show the logo at the size
       of neighbouring apps, with no grey container. Otherwise, add the Apple-mask step to
       `icons.sh`, regenerate, and re-check.
-- [ ] Bad arguments (missing binary, missing version) exit non-zero with a usage line.
+- [x] Bad arguments (missing binary, missing version) exit non-zero with a usage line.
 **Verify:**
-- [ ] `cargo build --release -p filecargo-gui && assets/macos/make-app.sh target/release/filecargo 0.1.0 /tmp/fc-app`
-- [ ] `/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' /tmp/fc-app/filecargo.app/Contents/Info.plist`
+- [x] `cargo build --release -p filecargo-gui && assets/macos/make-app.sh target/release/filecargo 0.1.0 /tmp/fc-app`
+- [x] `/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' /tmp/fc-app/filecargo.app/Contents/Info.plist`
 - [ ] Manual: Dock screenshot shared with the user (Checkpoint A).
 **Dependencies:** T1
 **Files:** `assets/macos/Info.plist`, `assets/macos/make-app.sh`, `SPEC-branding.md` (amendment), `assets/icons.sh` + `assets/icons/filecargo.icns` (only if the mask fallback is needed)
