@@ -23,6 +23,7 @@ gpui_kit::actions!(
     filecargo,
     [
         Quit,
+        About,
         OpenSettings,
         ConnectSelected,
         ShowQueue,
@@ -195,6 +196,15 @@ impl Workspace {
                     })),
             )
             .child(
+                Button::new("about")
+                    .small()
+                    .icon(IconName::Info)
+                    .label("About")
+                    .on_click(cx.listener(|_, _, window, cx| {
+                        crate::dialogs::about::open(window, cx);
+                    })),
+            )
+            .child(
                 Button::new("upload")
                     .small()
                     .icon(gpui_kit::assets::IconName::Upload)
@@ -315,6 +325,9 @@ impl Render for Workspace {
         v_flex()
             .id("workspace")
             .key_context("Workspace")
+            .on_action(cx.listener(|_, _: &About, window, cx| {
+                crate::dialogs::about::open(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
                 crate::dialogs::settings::open(this.model.clone(), window, cx);
             }))
@@ -359,6 +372,9 @@ pub fn bind_keys(cx: &mut gpui_kit::App) {
     use crate::terminal::{SendBackTab, SendTab};
     use crate::tree::{DeleteSelected, EditSelected, RenameSelected};
     use gpui_kit::KeyBinding;
+    // on macOS Cmd-Q also works with no window (the menu item shows it) and inside the terminal
+    #[cfg(target_os = "macos")]
+    cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
     cx.bind_keys([
         KeyBinding::new("secondary-q", Quit, Some("!Terminal")),
         KeyBinding::new("secondary-,", OpenSettings, Some("!Terminal")),

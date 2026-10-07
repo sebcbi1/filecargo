@@ -54,6 +54,13 @@ prompt). On Windows the release build needs `fxc.exe` from the Windows SDK (`GPU
    - [ ] Linux Wayland: after the README's install steps (`~/.local/bin`, `~/.local/share`), the launcher entry and the running window show the logo.
    - [ ] The README shows the centered logo above the title on GitHub, in light and dark themes.
 
+11. **About, menu bar and window lifecycle**
+   - [ ] All platforms: the toolbar's *About* button opens a dialog with the app name, version, licence and a *Repository* button that opens the project page; *Close* dismisses it.
+   - [ ] macOS: the menu bar shows *FileCargo* with *About FileCargo* and *Quit FileCargo* (⌘Q).
+   - [ ] macOS: the red close button closes the window; the app stays in the Dock and a running transfer keeps going; clicking the Dock icon brings the window back with the same state.
+   - [ ] macOS: ⌘Q with no window open and a transfer running reopens the window and asks "Quit anyway?"; without transfers it quits.
+   - [ ] Windows / Linux: closing the window quits the app (unchanged).
+
 ## Automated coverage that stands in for part of this list
 
 | What | Where |

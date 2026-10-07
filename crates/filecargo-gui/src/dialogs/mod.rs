@@ -1,6 +1,7 @@
 //! Dialogs: each one is a small view entity that owns its inputs (the dialog builder re-runs
 //! on every frame, so state cannot live inside it) plus a function that opens it.
 
+pub mod about;
 pub mod permissions;
 pub mod settings;
 pub mod site_editor;
