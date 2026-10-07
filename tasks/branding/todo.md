@@ -78,16 +78,16 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 - Add a `build.rs` that, only for Windows targets, compiles it with
   `embed_resource::compile_for(.., ["filecargo"], ParamsIncludeDirs([<abs assets/icons>]))` and
   fails the build on error. It emits `rerun-if-changed` for the `.rc` and `.ico`.
-- Add `embed-resource = "3.0.12"` to `[workspace.dependencies]` and to the gui's
+- Add `embed-resource = "3.0.11"` (the version already in the lockfile; `manifest_required`) to `[workspace.dependencies]` and to the gui's
   `[build-dependencies]`.
 **Acceptance:**
-- [ ] On macOS and Linux, `build.rs` is a no-op: it doesn't invoke a resource compiler, and the
+- [x] On macOS and Linux, `build.rs` is a no-op: it doesn't invoke a resource compiler, and the
       GUI builds and tests as before.
-- [ ] On Windows, `filecargo.exe` contains an `RT_GROUP_ICON` with id 1 (gpui's `load_icon()`
+- [ ] (pending CI) On Windows, `filecargo.exe` contains an `RT_GROUP_ICON` with id 1 (gpui's `load_icon()`
       picks it up). A missing `.ico` fails the build.
-- [ ] Test binaries don't get the resource (`compile_for` targets the `filecargo` bin only).
+- [ ] (pending CI) Test binaries don't get the resource (`compile_for` targets the `filecargo` bin only).
 **Verify:**
-- [ ] Local (macOS): `cargo clippy -p filecargo-gui --all-targets -- -D warnings && cargo test -p filecargo-gui`
+- [x] Local (macOS): `cargo clippy -p filecargo-gui --all-targets -- -D warnings && cargo test -p filecargo-gui`
 - [ ] CI: `gui (windows-latest)` green (Checkpoint B).
 - [ ] Manual (Windows, Checkpoint B): Explorer shows the exe icon; title bar, taskbar and Alt-Tab
       show the logo.

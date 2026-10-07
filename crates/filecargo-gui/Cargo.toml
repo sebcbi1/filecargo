@@ -21,6 +21,10 @@ anyhow.workspace = true
 # GPUI comes through gpui-kit only; never add gpui / gpui-component directly.
 gpui-kit.workspace = true
 
+[build-dependencies]
+# Windows only: the exe icon resource (see build.rs)
+embed-resource.workspace = true
+
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 filecargo-config.workspace = true

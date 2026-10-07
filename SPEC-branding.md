@@ -51,7 +51,7 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
   (`1 ICON "filecargo.ico"`, with `assets/icons` as an include dir) with
   `embed_resource::compile_for(.., ["filecargo"], ..)`. It does this **only when
   `CARGO_CFG_TARGET_OS == "windows"`**, so macOS and Linux builds never invoke a resource compiler.
-- A failed resource compile fails the build. It is not ignored.
+- A failed resource compile, or a missing resource compiler, fails the build (`manifest_required`). It is not ignored.
 - Result: Explorer shows the exe icon, and gpui's window class picks it up for the title bar,
   taskbar and Alt-Tab with no runtime code.
 
@@ -113,7 +113,7 @@ and **approved with this spec**:
 | Crate | Version | Where | Why |
 |---|---|---|---|
 | `image` | 0.25 (`default-features = false`, `features = ["png"]`) | `filecargo-gui`, `[target.'cfg(target_os = "linux")'.dependencies]` | `WindowOptions.icon` takes an `image::RgbaImage`, and gpui-kit doesn't re-export `image`. Already compiled through `gpui-pre` (0.25.10, with `png`), so this adds no new code to the build. |
-| `embed-resource` | 3.0.12 | `filecargo-gui` `[build-dependencies]` | Compiles the `.rc` with the MSVC `rc.exe` / `llvm-rc`. Already in the lockfile through `gpui-pre`. |
+| `embed-resource` | 3.0.11 | `filecargo-gui` `[build-dependencies]` | Compiles the `.rc` with the MSVC `rc.exe` / `llvm-rc`. Already in the lockfile (3.0.11) through `gpui-pre`, so the version matches it. |
 
 Tools (not in `mise.toml`; only `assets/icons.sh` needs them): `rsvg-convert` ≥ 2.5x,
 ImageMagick 7, `iconutil` (macOS). CI only copies committed files.
