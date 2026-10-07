@@ -1,6 +1,6 @@
 # Implementation Plan: branding
 
-> Spec: [SPEC-branding.md](../../SPEC-branding.md) · Tasks: [todo.md](todo.md) · Status: **draft, awaiting review**
+> Spec: [SPEC-branding.md](../../SPEC-branding.md) · Tasks: [todo.md](todo.md) · Status: **built; awaiting Checkpoints A and B**
 
 ## Overview
 
@@ -113,14 +113,14 @@ T3, T4 and T7 don't depend on each other and can be done in any order (or in par
 - [ ] The user has looked at the Dock icon.
 
 ### Phase 2: Runtime icons (verified in CI)
-- [ ] T3: Windows exe icon resource
-- [ ] T4: X11 window icon
+- [x] T3: Windows exe icon resource
+- [x] T4: X11 window icon
 
 ### Phase 3: Packaging and docs
-- [ ] T5: `release.yml` dispatch mode and the macOS `.app` archive (+ README macOS install)
-- [ ] T6: Linux desktop entry and icons in the archive (+ README Linux install)
-- [ ] T7: README logo header
-- [ ] T8: SMOKE Branding section, spec and index status
+- [x] T5: `release.yml` dispatch mode and the macOS `.app` archive (+ README macOS install)
+- [x] T6: Linux desktop entry and icons in the archive (+ README Linux install)
+- [x] T7: README logo header
+- [x] T8: SMOKE Branding section, spec and index status
 
 ### Checkpoint B: Complete
 - [ ] The user pushes the branch (or asks me to), and CI is green on all jobs (check, integration,

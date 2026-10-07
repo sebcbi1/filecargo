@@ -168,9 +168,9 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 **Description:** Put `<p align="center"><img src="assets/logo.svg" width="128" alt="filecargo logo"></p>`
 above the title in `README.md`.
 **Acceptance:**
-- [ ] The logo is centered above `# filecargo` on GitHub, in light and dark themes.
+- [ ] (pending GitHub) The logo is centered above `# filecargo` on GitHub, in light and dark themes.
 **Verify:**
-- [ ] Manual: GitHub rendering after push (Checkpoint B). Before that, a local Markdown preview.
+- [ ] (pending GitHub) Manual: GitHub rendering after push (Checkpoint B).
 **Dependencies:** none
 **Files:** `README.md`
 **Scope:** XS
@@ -182,11 +182,11 @@ above the title in `README.md`.
 - Set `SPEC-branding.md` and this plan to implemented once Checkpoint B passes.
 - Update the `SPEC.md` index line.
 **Acceptance:**
-- [ ] SMOKE lists the macOS, Windows, Linux X11, Linux Wayland and README checks, each with the
+- [x] SMOKE lists the macOS, Windows, Linux X11, Linux Wayland and README checks, each with the
       archive it applies to.
-- [ ] Spec, plan and index statuses match reality.
+- [x] Spec, plan and index statuses match reality (built, awaiting Checkpoints A and B).
 **Verify:**
-- [ ] Manual: read-through.
+- [x] Manual: read-through.
 **Dependencies:** T2–T7
 **Files:** `crates/filecargo-gui/SMOKE.md`, `SPEC-branding.md`, `SPEC.md`, `tasks/branding/plan.md`
 **Scope:** XS

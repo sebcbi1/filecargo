@@ -1,6 +1,6 @@
 # Spec: branding (app icon on every platform, README logo)
 
-> Increment id: `branding` · Status: **draft, awaiting review** · Last updated: 2026-10-07
+> Increment id: `branding` · Status: **built; awaiting CI, a release dry run and the smoke checks** · Last updated: 2026-10-07
 > Builds on the v1 modules in [SPEC.md](SPEC.md). Touches the `gui` crate (startup, `build.rs`) and
 > the release workflow only. Module ids don't change. The TUI is out of scope.
 

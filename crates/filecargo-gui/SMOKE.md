@@ -47,6 +47,13 @@ prompt). On Windows the release build needs `fxc.exe` from the Windows SDK (`GPU
    - [ ] *Add to queue* (toolbar or right-click) holds files as "queued (held)"; *Start queue* starts them; *Pause* affects this site only; *Clear queue* asks first; the Failed tab menu has *Clear failed*.
    - [ ] Quit with held items, restart: they come back held until *Start queue*.
 
+10. **Branding** (use the archives from a `workflow_dispatch` run of `release.yml`, not a `cargo run` build)
+   - [ ] macOS: unpack the archive, move `filecargo.app` to `/Applications` and allow it in *Privacy & Security*; the Dock, ⌘-Tab and Finder show the logo at the size of neighbouring icons, with no grey container.
+   - [ ] Windows: Explorer shows the logo on `filecargo.exe`; the title bar, taskbar and Alt-Tab show it when running.
+   - [ ] Linux X11: the window and taskbar show the logo with nothing installed.
+   - [ ] Linux Wayland: after the README's install steps (`~/.local/bin`, `~/.local/share`), the launcher entry and the running window show the logo.
+   - [ ] The README shows the centered logo above the title on GitHub, in light and dark themes.
+
 ## Automated coverage that stands in for part of this list
 
 | What | Where |

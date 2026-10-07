@@ -58,7 +58,7 @@ Servers, folders and settings are shared: a site added in one UI exists in the o
 | `gui` | gpui front-end → bin `filecargo` | `app-core` | [SPEC-gui.md](SPEC-gui.md) | done (awaiting final review) |
 
 **Increments after v1:** [SPEC-v1.1.md](SPEC-v1.1.md): local file ops, per-connection bottom panel, staged queue (draft).
-[SPEC-branding.md](SPEC-branding.md): app icon on every platform, README logo (draft).
+[SPEC-branding.md](SPEC-branding.md): app icon on every platform, README logo (built, awaiting CI, a release dry run and the SMOKE branding checks).
 
 **Build order:** `config` → `remote-fs` → `transfer`, `terminal` (parallel) → `app-core` → `tui` → `gui`
 
