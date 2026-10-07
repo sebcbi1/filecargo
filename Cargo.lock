@@ -2358,7 +2358,7 @@ checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "filecargo-app-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "filecargo-config",
@@ -2375,7 +2375,7 @@ dependencies = [
 
 [[package]]
 name = "filecargo-config"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "apple-native-keyring-store",
  "base64 0.23.1",
@@ -2397,7 +2397,7 @@ dependencies = [
 
 [[package]]
 name = "filecargo-gui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2413,7 +2413,7 @@ dependencies = [
 
 [[package]]
 name = "filecargo-remote-fs"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2440,7 +2440,7 @@ dependencies = [
 
 [[package]]
 name = "filecargo-terminal"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "filecargo-config",
@@ -2454,7 +2454,7 @@ dependencies = [
 
 [[package]]
 name = "filecargo-transfer"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "filecargo-config",
@@ -2473,7 +2473,7 @@ dependencies = [
 
 [[package]]
 name = "filecargo-tui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "crossterm",

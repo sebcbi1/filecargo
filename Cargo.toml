@@ -5,7 +5,7 @@ members = ["crates/*"]
 default-members = ["crates/filecargo-config", "crates/filecargo-remote-fs", "crates/filecargo-transfer", "crates/filecargo-terminal", "crates/filecargo-app-core", "crates/filecargo-tui"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.92"
 publish = false
