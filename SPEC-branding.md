@@ -61,8 +61,9 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
   `include_bytes!` of `assets/icons/png/filecargo-256.png`. `main` puts it in
   `WindowOptions.icon`. It is `cfg(target_os = "linux")`, so macOS and Windows binaries don't
   embed or decode it.
-- If decoding fails, it logs `tracing::warn!` and the window opens without an icon. Startup never
-  fails because of the icon.
+- If decoding fails, it prints `filecargo: cannot decode the window icon: …` to stderr (the gui
+  crate has no `tracing` dependency, and `main.rs` reports window errors the same way) and the
+  window opens without an icon. Startup never fails because of the icon.
 
 ### linux-desktop
 
@@ -165,7 +166,7 @@ pub fn window_icon() -> Option<Arc<image::RgbaImage>> {
     match image::load_from_memory_with_format(PNG, image::ImageFormat::Png) {
         Ok(decoded) => Some(Arc::new(decoded.into_rgba8())),
         Err(error) => {
-            tracing::warn!(%error, "cannot decode the window icon");
+            eprintln!("filecargo: cannot decode the window icon: {error}");
             None
         }
     }

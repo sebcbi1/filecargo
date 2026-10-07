@@ -35,6 +35,8 @@ fn main() -> Result<()> {
                     ..Default::default()
                 }),
                 app_id: Some("filecargo".into()),
+                #[cfg(target_os = "linux")]
+                icon: filecargo_gui::icon::window_icon(),
                 ..Default::default()
             };
             if let Err(error) = gpui_kit::open_window(options, cx, |window, cx| {

@@ -105,14 +105,14 @@ It checks its tools first and ends with a size check. Run it and commit its outp
   gui's Linux-only dependencies.
 - First amend `SPEC-branding.md` (`eprintln!` instead of `tracing::warn!`).
 **Acceptance:**
-- [ ] Unit test (Linux): `window_icon()` returns `Some` with a 256×256 image.
-- [ ] macOS and Windows builds neither depend on `image` through filecargo-gui nor embed the
+- [x] Unit test (Linux; also run on macOS with the cfg temporarily widened): `window_icon()` returns `Some` with a 256×256 image.
+- [x] macOS and Windows builds neither depend on `image` through filecargo-gui nor embed the
       PNG (`cargo tree -p filecargo-gui -e normal --target aarch64-apple-darwin -i image` shows
       it only via gpui-pre).
-- [ ] `Cargo.lock` gains no new package (image 0.25.10 is already there).
+- [x] `Cargo.lock` gains no new package (image 0.25.10 is already there).
 **Verify:**
-- [ ] Local (macOS): GUI clippy and tests green (the Linux code isn't compiled here).
-- [ ] CI: `gui (ubuntu-latest)` clippy and test green, with the icon test run (Checkpoint B).
+- [x] Local (macOS): GUI clippy and tests green (the Linux code isn't compiled here).
+- [ ] (pending CI) CI: `gui (ubuntu-latest)` clippy and test green, with the icon test run (Checkpoint B).
 - [ ] Manual (Linux X11, Checkpoint B): window and taskbar show the logo with no desktop file
       installed.
 **Dependencies:** T1

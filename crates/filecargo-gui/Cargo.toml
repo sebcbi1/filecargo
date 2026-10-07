@@ -21,6 +21,10 @@ anyhow.workspace = true
 # GPUI comes through gpui-kit only; never add gpui / gpui-component directly.
 gpui-kit.workspace = true
 
+# GPUI takes the X11 window icon as an `image::RgbaImage` and gpui-kit does not re-export it
+[target.'cfg(target_os = "linux")'.dependencies]
+image.workspace = true
+
 [build-dependencies]
 # Windows only: the exe icon resource (see build.rs)
 embed-resource.workspace = true
