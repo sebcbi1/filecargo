@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.svg" width="128" alt="filecargo logo"></p>
+
 # filecargo
 
 A FileZilla-style **FTP / FTPS / SFTP client** in Rust with two front-ends over one shared core:
