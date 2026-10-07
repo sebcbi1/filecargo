@@ -37,12 +37,12 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 **Files:** `assets/icons.sh`, `assets/icons/**` (generated)
 **Scope:** S
 
-### T2: `filecargo.app` built locally with `make-app.sh`
+### T2: `FileCargo.app` built locally with `make-app.sh`
 **Description:**
 - Add `assets/macos/Info.plist` (template, keys from the spec, placeholders `__VERSION__` and
   `__MIN_MACOS__`).
 - Add `assets/macos/make-app.sh <binary> <version> <out-dir>`:
-  1. Assembles `filecargo.app`.
+  1. Assembles `FileCargo.app`.
   2. Fills `LSMinimumSystemVersion` from `vtool -show-build`.
   3. Lints, ad-hoc signs the whole bundle, then verifies.
 - First amend `SPEC-branding.md` (mac-app + Project Structure) for the script.
@@ -51,13 +51,13 @@ It checks its tools first and ends with a size check. Run it and commit its outp
 - [x] `make-app.sh` on `target/release/filecargo` produces a bundle that passes `plutil -lint`
       and `codesign --verify --strict --verbose=2`.
 - [x] The bundle's `Info.plist` has the workspace version and the binary's `minos`.
-- [ ] `open filecargo.app` starts the GUI. The Dock, ⌘-Tab and Finder show the logo at the size
+- [ ] `open FileCargo.app` starts the GUI. The Dock, ⌘-Tab and Finder show the logo at the size
       of neighbouring apps, with no grey container. Otherwise, add the Apple-mask step to
       `icons.sh`, regenerate, and re-check.
 - [x] Bad arguments (missing binary, missing version) exit non-zero with a usage line.
 **Verify:**
 - [x] `cargo build --release -p filecargo-gui && assets/macos/make-app.sh target/release/filecargo 0.1.0 /tmp/fc-app`
-- [x] `/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' /tmp/fc-app/filecargo.app/Contents/Info.plist`
+- [x] `/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' /tmp/fc-app/FileCargo.app/Contents/Info.plist`
 - [ ] Manual: Dock screenshot shared with the user (Checkpoint A).
 **Dependencies:** T1
 **Files:** `assets/macos/Info.plist`, `assets/macos/make-app.sh`, `SPEC-branding.md` (amendment), `assets/icons.sh` + `assets/icons/filecargo.icns` (only if the mask fallback is needed)
@@ -129,14 +129,14 @@ It checks its tools first and ends with a size check. Run it and commit its outp
   - The tag/version check runs only on tags.
   - `publish` runs only on tags.
   - Archive names replace `/` in the ref name with `-`.
-- On the macOS legs, package with `assets/macos/make-app.sh`. The archive holds `filecargo.app`,
+- On the macOS legs, package with `assets/macos/make-app.sh`. The archive holds `FileCargo.app`,
   `filecargo-tui`, README and licenses, and no bare `filecargo`.
 - Update the README Install section for macOS: move the app to `/Applications`, then allow it in
   Privacy & Security on first launch.
 **Acceptance:**
 - [ ] (pending CI) A dispatch run on a branch builds 6 archives as artifacts, and no release is created.
 - [x] A tag push behaves as before (the check runs, and publish runs).
-- [x] macOS archives unpack (simulated locally: tar, extract, `codesign --verify --strict`) to a `filecargo.app` that passes `codesign --verify --strict`.
+- [x] macOS archives unpack (simulated locally: tar, extract, `codesign --verify --strict`) to a `FileCargo.app` that passes `codesign --verify --strict`.
 **Verify:**
 - [x] `actionlint .github/workflows/release.yml` if installed (installing it needs approval).
       Otherwise `ruby -ryaml -e 'YAML.load_file(ARGV[0])' .github/workflows/release.yml`.

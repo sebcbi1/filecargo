@@ -23,7 +23,7 @@ Sites, folders and settings are shared: a site added in one front-end exists in 
 Download the archive for your platform from the [Releases](../../releases) page and unpack it. Each
 archive contains the GUI and `filecargo-tui`. Release builds are not code-signed.
 
-- **macOS:** the GUI is `filecargo.app`. Move it to `/Applications`, then on first launch allow it in
+- **macOS:** the GUI is `FileCargo.app`. Move it to `/Applications`, then on first launch allow it in
   *System Settings → Privacy & Security* (it is only ad-hoc signed, not notarized). Run
   `filecargo-tui` from a terminal.
 - **Windows:** run `filecargo.exe` (GUI) or `filecargo-tui.exe`. SmartScreen may warn.

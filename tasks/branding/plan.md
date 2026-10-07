@@ -54,7 +54,7 @@ T3, T4 and T7 don't depend on each other and can be done in any order (or in par
 ### macOS bundle assembly lives in a script, not in YAML (amends the spec)
 
 - `assets/macos/make-app.sh <filecargo binary> <version> <out dir>`:
-  1. Builds `filecargo.app` from `assets/macos/Info.plist` (placeholders `__VERSION__`,
+  1. Builds `FileCargo.app` from `assets/macos/Info.plist` (placeholders `__VERSION__`,
      `__MIN_MACOS__`) and the `.icns`.
   2. Reads `LSMinimumSystemVersion` from the binary itself (`vtool -show-build` → `minos`), so it
      always matches what the build really targets (Intel and arm64 differ).
@@ -95,7 +95,7 @@ T3, T4 and T7 don't depend on each other and can be done in any order (or in par
   - The `publish` job gets `if: ${{ !cancelled() && github.ref_type == 'tag' }}`.
   - Archive names use the ref name with `/` replaced by `-`, so a dispatch from `feat/x` still
     produces valid file names.
-- macOS legs: `make-app.sh` → archive holds `filecargo.app`, `filecargo-tui`, README and licenses.
+- macOS legs: `make-app.sh` → archive holds `FileCargo.app`, `filecargo-tui`, README and licenses.
 - Linux legs: `share/applications/filecargo.desktop` + `share/icons/hicolor/<n>x<n>/apps/filecargo.png`.
   `desktop-file-validate` runs before packaging, with `desktop-file-utils` added to the existing
   apt line.
@@ -105,7 +105,7 @@ T3, T4 and T7 don't depend on each other and can be done in any order (or in par
 
 ### Phase 1: Assets and the macOS check (local)
 - [x] T1: `icons.sh` and the committed icon set
-- [x] T2: `filecargo.app` built locally with `make-app.sh`
+- [x] T2: `FileCargo.app` built locally with `make-app.sh`
 
 ### Checkpoint A: macOS icon looks right
 - [ ] The Dock / ⌘-Tab / Finder show the logo at neighbour size, with no grey container. If a grey

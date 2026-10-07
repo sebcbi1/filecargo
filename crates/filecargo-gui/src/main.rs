@@ -31,7 +31,7 @@ fn main() -> Result<()> {
                     cx,
                 ))),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("filecargo".into()),
+                    title: Some("FileCargo".into()),
                     ..Default::default()
                 }),
                 app_id: Some("filecargo".into()),

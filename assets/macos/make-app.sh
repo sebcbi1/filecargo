@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assembles filecargo.app around a built GUI binary: Info.plist, icon, ad-hoc signature.
+# Assembles FileCargo.app around a built GUI binary: Info.plist, icon, ad-hoc signature.
 # Usage: make-app.sh <filecargo binary> <version> <out dir>
 set -euo pipefail
 
@@ -21,7 +21,7 @@ icon="$here/../icons/filecargo.icns"
 min_macos="$(vtool -show-build "$binary" | awk '$1 == "minos" { print $2; exit }')"
 [ -n "$min_macos" ] || { echo "make-app.sh: cannot read minos from $binary" >&2; exit 1; }
 
-app="$out/filecargo.app"
+app="$out/FileCargo.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/filecargo"

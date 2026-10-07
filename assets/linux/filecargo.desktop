@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=filecargo
+Name=FileCargo
 GenericName=FTP/SFTP Client
 Comment=Transfer files over SFTP, FTP and FTPS
 Exec=filecargo

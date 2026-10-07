@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>filecargo</string>
+	<string>FileCargo</string>
 	<key>CFBundleDisplayName</key>
-	<string>filecargo</string>
+	<string>FileCargo</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.sebcbi1.filecargo</string>
 	<key>CFBundleExecutable</key>

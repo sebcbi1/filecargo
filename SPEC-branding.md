@@ -28,7 +28,7 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
 | `win-icon` | Embed `filecargo.ico` as resource id 1 in `filecargo.exe` | `crates/filecargo-gui/{build.rs,Cargo.toml}` |
 | `x11-icon` | Pass the logo as `WindowOptions.icon` on Linux | `crates/filecargo-gui/src/{main,icon}.rs` |
 | `linux-desktop` | `filecargo.desktop` and hicolor PNGs in the Linux archives, with install steps in the README | `assets/linux/`, `release.yml`, README |
-| `mac-app` | `filecargo.app` (Info.plist + `.icns`, ad-hoc signed) in the macOS archives | `assets/macos/`, `release.yml`, README |
+| `mac-app` | `FileCargo.app` (Info.plist + `.icns`, ad-hoc signed) in the macOS archives | `assets/macos/`, `release.yml`, README |
 | `readme-logo` | Centered logo header in the README | `README.md` |
 
 ### icon-assets
@@ -87,15 +87,15 @@ How each platform gets its icon (verified against `gpui-pre 0.3.8` sources, 2026
   - `NSHighResolutionCapable` = true
   - `LSMinimumSystemVersion` = the deployment target the binary is actually built for (read with
     `vtool -show-build` during implementation, not guessed)
-- `assets/macos/make-app.sh <binary> <version> <out dir>` assembles `filecargo.app/Contents/{Info.plist,
+- `assets/macos/make-app.sh <binary> <version> <out dir>` assembles `FileCargo.app/Contents/{Info.plist,
   MacOS/filecargo, Resources/filecargo.icns}`, fills `LSMinimumSystemVersion` from the binary's
   `minos` (`vtool -show-build`), runs `plutil -lint`, ad-hoc signs the finished bundle with
   `codesign --force --sign -`, then verifies with `codesign --verify --strict`. The two macOS
   release legs call it, and it can be run locally to look at the real Dock icon.
-- macOS archive contents: `filecargo.app`, `filecargo-tui`, README and licenses. There is no bare
+- macOS archive contents: `FileCargo.app`, `filecargo-tui`, README and licenses. There is no bare
   `filecargo` binary next to the app. Windows and Linux archives keep their current layout, plus
   the `share/` tree on Linux.
-- README: unpack, move `filecargo.app` to `/Applications`, and allow it on first launch in
+- README: unpack, move `FileCargo.app` to `/Applications`, and allow it on first launch in
   *System Settings → Privacy & Security* (it is still not notarized).
 - `release.yml` gains a `workflow_dispatch` trigger that builds and uploads the archives as
   workflow artifacts **without publishing**. The tag/version check and the `publish` job run on
@@ -221,7 +221,7 @@ silently break. The rest is a manual smoke list.
   - `unsafe` (including Objective-C calls for the Dock icon).
   - Fail GUI startup because of an icon.
   - Publish a release or push a tag without being asked.
-  - Ship the bare `filecargo` binary next to `filecargo.app` in the macOS archive.
+  - Ship the bare `filecargo` binary next to `FileCargo.app` in the macOS archive.
 
 ## Success Criteria
 
@@ -231,7 +231,7 @@ silently break. The rest is a manual smoke list.
    the title bar, taskbar and Alt-Tab.
 3. On Linux X11 the window shows the logo with nothing installed. On Wayland it shows after the
    README's install steps. `desktop-file-validate` passes.
-4. The macOS archive contains a `filecargo.app` that passes `plutil -lint` and
+4. The macOS archive contains a `FileCargo.app` that passes `plutil -lint` and
    `codesign --verify`. Once allowed in Privacy & Security, it launches the GUI, and the Dock
    shows the logo at the same visual size as other apps.
 5. A `workflow_dispatch` run of `release.yml` produces all six archives and publishes nothing. A
